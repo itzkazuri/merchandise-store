@@ -1,0 +1,125 @@
+# Anime Merchandise Store — Frontend
+
+> Vue 3 + TypeScript + Vite frontend untuk toko merchandise anime. Backend
+> FastAPI terpisah di http://localhost:8000 (prefix /api/v1). Dokumen ini
+> adalah konteks ringkas untuk LLM/agent yang bekerja di folder `frontend/`.
+
+Status: template Vue resmi; `.env` dan dokumentasi integrasi sudah dibuat,
+tetapi halaman/route/API client belum diimplementasikan.
+
+## Fakta kunci
+
+- Package manager: bun. Node ^22.18.0 || >=24.12.0.
+- Dev server: `bun dev` → http://localhost:5173.
+- Build: `bun run build` (type-check + vite build). Type-check: `bun run type-check`.
+- Alias import: `@` → `./src`.
+- Entry: `src/main.ts` → `src/App.vue` + `src/router/index.ts` (routes masih kosong).
+- Backend docs: http://localhost:8000/docs — health: http://localhost:8000/health.
+- CORS backend hanya mengizinkan origin http://localhost:5173.
+
+## Environment
+
+Semua variabel wajib berawalan `VITE_` dan tidak boleh berisi rahasia server.
+Konfigurasi ada di `.env` (lokal) dan `.env.example` (template).
+
+| Key | Default | Guna |
+|---|---|---|
+| VITE_APP_NAME | Anime Merchandise Store | Nama aplikasi |
+| VITE_APP_DESCRIPTION | Toko merchandise anime... | Meta/SEO |
+| VITE_API_BASE_URL | http://localhost:8000/api/v1 | Base URL API |
+| VITE_API_ORIGIN | http://localhost:8000 | Origin backend |
+| VITE_GOOGLE_LOGIN_URL | http://localhost:8000/api/v1/auth/google/login | Mulai OAuth |
+| VITE_TOKEN_STORAGE_KEY | merch.auth | Key localStorage |
+| VITE_ACCESS_TOKEN_TTL_MINUTES | 30 | Info access token |
+| VITE_REFRESH_TOKEN_TTL_DAYS | 7 | Info refresh token |
+| VITE_MIDTRANS_CLIENT_KEY | SB-Mid-client-xxxxxxxx | Client key Snap |
+| VITE_MIDTRANS_SNAP_JS_URL | https://app.sandbox.midtrans.com/snap/snap.js | SDK Snap |
+| VITE_MIDTRANS_IS_PRODUCTION | false | Sandbox/production |
+| VITE_CURRENCY | IDR | Mata uang |
+| VITE_LOCALE | id-ID | Format angka/tanggal |
+| VITE_TIMEZONE | Asia/Jakarta | Zona waktu |
+| VITE_DEFAULT_PAGE_SIZE | 20 | Paginasi |
+| VITE_MAX_UPLOAD_MB | 5 | Batas upload |
+
+## Konvensi integrasi API
+
+- Kirim `Authorization: Bearer <access_token>` untuk endpoint login.
+- Access token 30 menit; refresh token 7 hari dan **berotasi** setiap refresh.
+- Logout memakai denylist Redis. Role dibaca backend per request (tanpa relogin).
+- Daftar sukses memakai bentuk: `{ items, total, page, size, pages, has_next, has_prev }`.
+- Error: `{ "detail": "..." }`; validasi 422 memakai array `detail`.
+- Format uang: Decimal string (mis. `"100000.00"`), tampilkan dengan
+  `Intl.NumberFormat(VITE_LOCALE, { style: "currency", currency: VITE_CURRENCY })`.
+
+### Endpoint yang dipakai frontend
+
+Publik/katalog: `GET /catalog/home`, `GET /products`, `GET /products/search`,
+`GET /products/filters`, `GET /products/{slug}`, `GET /payments/methods`.
+
+Auth: `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`,
+`POST /auth/logout`, `GET /auth/me`, `GET /auth/session-check`,
+`GET /auth/google/login`, `GET /auth/google/callback`.
+
+Login user: like `POST|DELETE /products/{id}/like`, `GET /products/liked`;
+cart `GET|DELETE /cart`, `POST /cart/items`, `PATCH|DELETE /cart/items/{id}`;
+order `POST /orders/checkout`, `GET /orders`, `GET /orders/{id}`,
+`POST /orders/{id}/cancel`; bayar `POST /payments/midtrans/{order_id}`.
+
+Staff/admin: `GET /admin/orders`, `GET /admin/orders/{id}`,
+`PATCH /admin/orders/{id}/status|tracking|mark-paid`, `POST /admin/pos/orders`,
+`GET /admin/revenue`; produk `POST|PATCH|DELETE /products...` + images;
+akun `GET /users`, `PATCH /users/{id}/roles|status`, `GET|POST /roles`.
+
+### Aturan bisnis
+
+- `delivery_method`: `store` (ongkir 0), `courier` (wajib alamat, ongkir
+  ditanggung customer), `custom` (wajib catatan; biasanya event).
+- `payment_method`: `midtrans` (default) atau `cash`. `cash` + `courier` → 422.
+- Status: `pending_payment → paid → processing → shipped → completed`;
+  `cancelled` sebelum `shipped` dan stok otomatis kembali.
+- `total = subtotal + shipping_cost`; pendapatan admin hanya dari `subtotal`
+  untuk status paid/processing/shipped/completed.
+- Cash checkout tetap `pending_payment`; staff menandai lunas via `mark-paid`.
+- POS (`POST /admin/pos/orders`) = cash, langsung `paid`, `cashier_id` terisi,
+  tanpa akun customer.
+- `/users` hanya berisi admin/staff; akun customer tidak boleh di-index.
+- Resi hanya bisa diisi setelah dibayar; simpan kode resi apa adanya.
+
+### Midtrans Snap
+
+1. Checkout `payment_method=midtrans` → order `pending_payment`.
+2. `POST /payments/midtrans/{order_id}` → `{ token, redirect_url, client_key,
+   snap_js_url }`.
+3. Panggil `window.snap.pay(token, callbacks)` atau buka `redirect_url`.
+4. Status final hanya ditentukan webhook backend
+   (`POST /payments/midtrans/notification`, signature SHA512). Frontend tidak
+   boleh menandai lunas sendiri.
+5. Server key tidak boleh masuk frontend. Saat ini key backend placeholder →
+   endpoint Snap mengembalikan 503.
+
+## Pekerjaan AI pada sesi ini
+
+- Menambahkan `frontend/.env` dengan konfigurasi API/auth/Midtrans/toko yang
+  cocok dengan `backend/.env` (origin 5173 → API 8000).
+- Menambahkan `frontend/.env.example` sebagai template.
+- Menambahkan `frontend/docs.txt` (dokumentasi lengkap).
+- Menambahkan `frontend/llms.txt` (file ini).
+- Tidak mengubah `src/` — frontend masih template Vue.
+
+## Langkah berikutnya (belum dikerjakan)
+
+1. Isi `src/router/index.ts` + layout; guard role customer/staff/admin.
+2. Buat API client (fetch wrapper), simpan token di localStorage memakai
+   `VITE_TOKEN_STORAGE_KEY`, auto-refresh saat 401.
+3. Halaman: home/katalog, search+filter, detail produk, like, keranjang,
+   checkout, pembayaran, riwayat, login/register.
+4. Dashboard staff/admin: produk, pesanan, resi, pendapatan, POS.
+5. Tangani redirect OAuth (`?access_token=&refresh_token=`) lalu bersihkan URL.
+6. Ganti key Midtrans placeholder sebelum menguji pembayaran asli.
+
+## Referensi
+
+- [docs.txt](./docs.txt) — dokumentasi frontend lengkap.
+- [README.md](./README.md) — setup template Vue.
+- [Backend API docs](http://localhost:8000/docs)
+- [Backend README](../backend/README.md)

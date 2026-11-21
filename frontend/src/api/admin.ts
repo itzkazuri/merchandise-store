@@ -1,0 +1,27 @@
+import { apiRequest, queryString } from './client'
+
+export const adminApi = {
+  orders: (params: Record<string, unknown> = {}) => apiRequest(`/admin/orders${queryString(params)}`),
+  order: (id: number | string) => apiRequest(`/admin/orders/${id}`),
+  setOrderStatus: (id: number | string, status: string) => apiRequest(`/admin/orders/${id}/status`, { method: 'PATCH', body: { status } }),
+  setTracking: (id: number | string, tracking_number: string) => apiRequest(`/admin/orders/${id}/tracking`, { method: 'PATCH', body: { tracking_number } }),
+  markPaid: (id: number | string) => apiRequest(`/admin/orders/${id}/mark-paid`, { method: 'PATCH' }),
+  posOrder: (body: Record<string, unknown>) => apiRequest('/admin/pos/orders', { method: 'POST', body }),
+  revenue: (params: Record<string, unknown> = {}) => apiRequest(`/admin/revenue${queryString(params)}`),
+  createProduct: (body: Record<string, unknown>) => apiRequest('/products', { method: 'POST', body }),
+  updateProduct: (id: number, body: Record<string, unknown>) => apiRequest(`/products/${id}`, { method: 'PATCH', body }),
+  deleteProduct: (id: number) => apiRequest<void>(`/products/${id}`, { method: 'DELETE' }),
+  categories: (params: Record<string, unknown> = {}) => apiRequest(`/categories${queryString(params)}`),
+  createCategory: (body: Record<string, unknown>) => apiRequest('/categories', { method: 'POST', body }),
+  updateCategory: (id: number, body: Record<string, unknown>) => apiRequest(`/categories/${id}`, { method: 'PATCH', body }),
+  deleteCategory: (id: number) => apiRequest<void>(`/categories/${id}`, { method: 'DELETE' }),
+  addProductImage: (id: number, body: Record<string, unknown>) => apiRequest(`/products/${id}/images`, { method: 'POST', body }),
+  updateProductImage: (id: number, imageId: number, body: Record<string, unknown>) => apiRequest(`/products/${id}/images/${imageId}`, { method: 'PATCH', body }),
+  deleteProductImage: (id: number, imageId: number) => apiRequest<void>(`/products/${id}/images/${imageId}`, { method: 'DELETE' }),
+  users: (params: Record<string, unknown> = {}) => apiRequest(`/users${queryString(params)}`),
+  user: (id: number | string) => apiRequest(`/users/${id}`),
+  setUserRoles: (id: number | string, roles: string[]) => apiRequest(`/users/${id}/roles`, { method: 'PATCH', body: { roles } }),
+  setUserStatus: (id: number | string, body: Record<string, unknown>) => apiRequest(`/users/${id}/status`, { method: 'PATCH', body }),
+  roles: () => apiRequest('/roles'),
+  createRole: (body: Record<string, unknown>) => apiRequest('/roles', { method: 'POST', body }),
+}

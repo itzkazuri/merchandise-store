@@ -1,0 +1,13 @@
+{
+  "name": "Mochibako Admin dan Kasir",
+  "short_name": "Mochibako Admin",
+  "description": "Dashboard admin dan kasir Mochibako",
+  "start_url": "/admin/",
+  "scope": "/admin/",
+  "display": "standalone",
+  "background_color": "#F6F3EC",
+  "theme_color": "#F6F3EC",
+  "icons": [
+    { "src": "/admin/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

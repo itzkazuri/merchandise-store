@@ -1,0 +1,71 @@
+# Environment files and secrets
+**/.env
+**/.env.*
+!**/.env.example
+
+# Frontend dependencies and generated output
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/coverage/
+frontend/*.tsbuildinfo
+
+# Backend virtual environments, caches, and generated files
+backend/.venv/
+backend/venv/
+backend/__pycache__/
+backend/**/*.py[cod]
+backend/**/*.egg-info/
+backend/.pytest_cache/
+backend/.ruff_cache/
+backend/.mypy_cache/
+backend/htmlcov/
+backend/.coverage
+backend/dist/
+backend/build/
+
+# Runtime data and local databases
+backend/storage/
+backend/uploads/
+backend/*.db
+backend/*.sqlite
+backend/*.sqlite3
+
+# Logs and local machine files
+*.log
+.DS_Store
+Thumbs.db
+
+# Editor and IDE settings
+**/.vscode/
+**/.idea/
+**/.cursor/
+**/.antigravity/
+**/.fleet/
+**/.zed/
+**/.taste-skill/
+
+# AI coding assistants and agent workspace data
+**/.agents/
+**/.codex/
+**/.claude/
+**/.gemini/
+**/.opencode/
+**/.continue/
+**/.windsurf/
+**/.aider/
+**/.roo/
+**/.kilocode/
+**/.amazonq/
+**/.trae/
+**/.junie/
+**/.qodo/
+**/.mcp.json
+**/.sublime-workspace
+**/*.code-workspace
+**/*.iml
+**/*.suo
+**/*.user
+**/*.swp
+**/*.swo
+**/*~

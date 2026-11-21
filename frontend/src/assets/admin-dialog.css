@@ -1,0 +1,127 @@
+/* =========================================================
+   ADMIN DIALOG (native <dialog>)
+   Catatan: Tailwind preflight mengeset `margin: 0` pada semua
+   elemen, termasuk <dialog>. Tanpa `margin: auto` dialog akan
+   menempel di kiri-atas, bukan center.
+   ========================================================= */
+.admin-dialog {
+  position: fixed;
+  inset: 0;
+  width: min(860px, calc(100vw - 32px));
+  max-width: none;
+  height: fit-content;
+  max-height: min(92dvh, 940px);
+  margin: auto;
+  padding: 0;
+  border: 1px solid #dcd8ce;
+  border-radius: 14px;
+  background: #fff;
+  color: var(--ad-ink);
+  box-shadow: 0 22px 70px #1b243033;
+  overflow: hidden;
+}
+
+/* UA menampilkan dialog lewat [open]; jangan paksa display di base. */
+.admin-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-dialog::backdrop {
+  background: #1b24304f;
+  backdrop-filter: blur(3px);
+}
+
+.admin-dialog__header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 24px 15px;
+  border-bottom: 1px solid #e8e5dd;
+  background: #fff;
+}
+
+.admin-dialog__header h2 {
+  margin: 0;
+  font: 600 20px var(--font-head);
+  letter-spacing: -0.01em;
+}
+
+.admin-dialog__header p {
+  margin: 4px 0 0;
+  color: #68717b;
+  font-size: 12px;
+}
+
+.admin-dialog__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 18px 24px 22px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.admin-dialog__footer {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  padding: 12px 24px;
+  border-top: 1px solid #e8e5dd;
+  background: #fff;
+}
+
+.admin-icon-button {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  border: 1px solid #dedbd3;
+  background: #fff;
+  color: #56606a;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.admin-icon-button:hover {
+  background: #f3f0e8;
+  color: #1b2430;
+}
+
+.admin-icon-button:focus-visible {
+  outline: 3px solid #f1d98f;
+  outline-offset: 2px;
+}
+
+/* Scrollbar dalam dialog */
+.admin-dialog__body {
+  scrollbar-width: thin;
+  scrollbar-color: #cfc9bc transparent;
+}
+
+@media (max-width: 640px) {
+  .admin-dialog {
+    inset: auto 0 0;
+    width: 100vw;
+    height: 96dvh;
+    max-height: 96dvh;
+    margin: 0;
+    border-radius: 16px 16px 0 0;
+    border-bottom: 0;
+  }
+
+  .admin-dialog__header {
+    padding: 17px 17px 13px;
+  }
+
+  .admin-dialog__body {
+    padding: 15px 17px 18px;
+  }
+
+  .admin-dialog__footer {
+    padding: 11px 17px calc(11px + env(safe-area-inset-bottom));
+  }
+}

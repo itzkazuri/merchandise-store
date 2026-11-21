@@ -1,0 +1,349 @@
+# DOKUMENTASI FRONTEND — Anime Merchandise Store
+
+Dokumen ini menjelaskan kondisi frontend, cara menjalankan, konfigurasi
+environment, kontrak API backend yang harus dipakai, aturan bisnis, dan
+pekerjaan yang sudah dilakukan AI pada folder `frontend/`.
+
+Terakhir diperbarui: 2026-11-19
+
+
+================================================================================
+1. RINGKASAN
+================================================================================
+
+Frontend adalah aplikasi Vue 3 + TypeScript + Vite untuk toko merchandise anime.
+Saat ini masih berupa template resmi Vue (belum ada halaman/route yang dibuat),
+tetapi environment dan dokumentasi integrasi backend sudah disiapkan.
+
+Backend FastAPI berjalan terpisah di http://localhost:8000 dengan prefix
+/api/v1. Semua data (produk, keranjang, pesanan, pembayaran, pendapatan)
+diambil dari backend tersebut.
+
+
+================================================================================
+2. STACK
+================================================================================
+
+- Vue 3.5 (Composition API, <script setup lang="ts">)
+- TypeScript 6
+- Vite 8
+- Vue Router 5 (riwayat HTML5)
+- vue-tsc untuk type-check
+- bun sebagai package manager (bun.lock tersedia)
+- Node ^22.18.0 || >=24.12.0
+
+Belum ada: Pinia, UI framework, form library, HTTP client khusus.
+Gunakan fetch bawaan browser atau tambahkan axios bila perlu.
+
+
+================================================================================
+3. STRUKTUR FOLDER SAAT INI
+================================================================================
+
+frontend/
+├── .env                      # konfigurasi lokal (dibuat AI)
+├── .env.example              # template konfigurasi (dibuat AI)
+├── docs.txt                  # dokumen ini (dibuat AI)
+├── llms.txt                  # ringkasan untuk LLM/agent (dibuat AI)
+├── index.html                # HTML shell Vite
+├── package.json
+├── vite.config.ts            # alias "@" -> ./src
+├── tsconfig*.json
+├── env.d.ts
+├── public/
+├── src/
+│   ├── main.ts               # bootstrap Vue + router
+│   ├── App.vue               # masih template "You did it!"
+│   └── router/index.ts       # routes: [] (masih kosong)
+└── node_modules/
+
+
+================================================================================
+4. MENJALANKAN
+================================================================================
+
+Prasyarat:
+- Backend sudah jalan di http://localhost:8000
+- Node 22.18+ / 24.12+ dan bun
+
+Perintah:
+
+    cd frontend
+    bun install
+    bun dev              # http://localhost:5173
+    bun run build        # type-check + build produksi ke dist/
+    bun run preview      # preview hasil build
+    bun run type-check   # vue-tsc saja
+
+PENTING:
+- Origin frontend HARUS http://localhost:5173 karena backend membatasi CORS
+  lewat CORS_ORIGINS=http://localhost:5173 dan memakai FRONTEND_URL yang sama.
+- Kalau port berubah, ubah juga backend/.env (FRONTEND_URL, CORS_ORIGINS) dan
+  GOOGLE_REDIRECT_URI bila perlu.
+
+
+================================================================================
+5. ENVIRONMENT (.env)
+================================================================================
+
+Semua variabel harus berawalan VITE_ agar terbaca di browser melalui
+import.meta.env. Variabel VITE_ TIDAK boleh berisi rahasia (server key,
+password database, dsb.) karena ikut ter-bundle ke JavaScript publik.
+
+| Variabel                        | Nilai default                                   | Fungsi |
+|---------------------------------|-------------------------------------------------|--------|
+| VITE_APP_NAME                   | Anime Merchandise Store                         | Nama aplikasi |
+| VITE_APP_DESCRIPTION            | Toko merchandise anime...                       | Meta/SEO |
+| VITE_API_BASE_URL               | http://localhost:8000/api/v1                    | Base URL semua request API |
+| VITE_API_ORIGIN                 | http://localhost:8000                           | Origin backend (gambar/aset) |
+| VITE_GOOGLE_LOGIN_URL           | http://localhost:8000/api/v1/auth/google/login  | Mulai login Google |
+| VITE_TOKEN_STORAGE_KEY          | merch.auth                                      | Key localStorage token |
+| VITE_ACCESS_TOKEN_TTL_MINUTES   | 30                                              | Info masa access token |
+| VITE_REFRESH_TOKEN_TTL_DAYS     | 7                                               | Info masa refresh token |
+| VITE_MIDTRANS_CLIENT_KEY        | SB-Mid-client-xxxxxxxx                          | Client key Midtrans (publik) |
+| VITE_MIDTRANS_SNAP_JS_URL       | https://app.sandbox.midtrans.com/snap/snap.js   | SDK Snap |
+| VITE_MIDTRANS_IS_PRODUCTION     | false                                           | Sandbox vs production |
+| VITE_CURRENCY                   | IDR                                             | Mata uang tampilan |
+| VITE_LOCALE                     | id-ID                                           | Format angka/tanggal |
+| VITE_TIMEZONE                   | Asia/Jakarta                                    | Zona waktu tampilan |
+| VITE_DEFAULT_PAGE_SIZE          | 20                                              | Paginasi default |
+| VITE_MAX_UPLOAD_MB              | 5                                               | Batas upload gambar |
+
+Catatan Midtrans:
+- `VITE_MIDTRANS_CLIENT_KEY` harus sama dengan `MIDTRANS_CLIENT_KEY` di backend.
+- Saat ini backend masih memakai key placeholder (`xxxxxxxx`), jadi transaksi
+  Midtrans asli akan gagal (HTTP 503) sampai key sandbox asli diisi.
+- Untuk production, ganti SNAP_JS_URL ke
+  https://app.midtrans.com/snap/snap.js dan IS_PRODUCTION=true.
+
+
+================================================================================
+6. KONTAK DENGAN BACKEND
+================================================================================
+
+Base URL: VITE_API_BASE_URL (default http://localhost:8000/api/v1)
+Dokumentasi interaktif backend: http://localhost:8000/docs
+Health check: http://localhost:8000/health
+
+Autentikasi:
+- Login/register mengembalikan `access_token` dan `refresh_token`.
+- Kirim access token di header: `Authorization: Bearer <access_token>`.
+- Access token berlaku 30 menit; refresh token 7 hari dengan ROTASI
+  (setiap refresh mengembalikan refresh token baru, yang lama hangus).
+- Logout memakai denylist Redis; setelah logout token tidak bisa dipakai.
+- Role dibaca backend dari database pada tiap request, jadi perubahan role
+  langsung berlaku tanpa login ulang.
+
+Alur Google OAuth:
+1. Buka VITE_GOOGLE_LOGIN_URL.
+2. Backend redirect ke Google, lalu callback ke
+   /api/v1/auth/google/callback.
+3. Backend redirect ke FRONTEND_URL dengan query
+   `?access_token=...&refresh_token=...`.
+4. Frontend menyimpan token, lalu membersihkan URL dengan
+   history.replaceState.
+
+Format sukses daftar (pagination):
+
+    {
+      "items": [...],
+      "total": 123,
+      "page": 1,
+      "size": 20,
+      "pages": 7,
+      "has_next": true,
+      "has_prev": false
+    }
+
+Format error FastAPI:
+
+    { "detail": "Pesan error" }            // error biasa
+    { "detail": [{ "loc": [...], ... }] }  // validasi 422
+
+
+================================================================================
+7. PETA ENDPOINT BACKEND
+================================================================================
+
+PUBLIK / KATALOG
+  GET  /catalog/home                  new arrivals, best sellers, handmade, imported
+  GET  /products                      katalog + filter + paginasi
+  GET  /products/search               pencarian + filter (q, product_type, status,
+                                      min_price, max_price, in_stock, sort)
+  GET  /products/filters              opsi filter + rentang harga
+  GET  /products/{slug}               detail produk + like_count / is_liked
+
+AUTH
+  POST /auth/register                 {name, email, password}
+  POST /auth/login                    {email, password}
+  POST /auth/refresh                  {refresh_token}
+  POST /auth/logout                   butuh access token
+  GET  /auth/me                       profil user login
+  GET  /auth/session-check            validasi sesi
+  GET  /auth/google/login             mulai OAuth
+  GET  /auth/google/callback          callback (redirect ke frontend)
+
+PRODUK DISUKAI (login)
+  POST   /products/{id}/like
+  DELETE /products/{id}/like
+  GET    /products/liked
+
+KERANJANG (login)
+  GET    /cart
+  POST   /cart/items                  {product_id, quantity}
+  PATCH  /cart/items/{item_id}        {quantity}
+  DELETE /cart/items/{item_id}
+  DELETE /cart
+
+PESANAN (login)
+  POST /orders/checkout               checkout keranjang
+  GET  /orders                        riwayat belanja (filter status)
+  GET  /orders/{order_id}
+  POST /orders/{order_id}/cancel      hanya saat pending_payment
+
+PEMBAYARAN
+  GET  /payments/methods              midtrans & cash
+  POST /payments/midtrans/{order_id}  buat Snap token (login, pemilik order)
+  POST /payments/midtrans/notification webhook Midtrans (bukan untuk frontend)
+
+ADMIN / STAFF (role admin atau staff)
+  GET   /admin/orders                 filter status, delivery_method, q, tanggal
+  GET   /admin/orders/{order_id}
+  PATCH /admin/orders/{order_id}/status      {status}
+  PATCH /admin/orders/{order_id}/tracking    {tracking_number}
+  PATCH /admin/orders/{order_id}/mark-paid   khusus cash
+  POST  /admin/pos/orders             mode kasir event (cash, langsung lunas)
+  GET   /admin/revenue                date_from, date_to, group_by=day|month
+
+MANAJEMEN PRODUK (staff/admin)
+  POST   /products
+  PATCH  /products/{product_id}
+  DELETE /products/{product_id}       admin saja
+  POST   /products/{product_id}/images
+  PATCH  /products/{product_id}/images/{image_id}
+  DELETE /products/{product_id}/images/{image_id}
+
+AKUN (admin saja)
+  GET   /users                        HANYA admin/staff (customer tidak di-index)
+  GET   /users/{user_id}              akun customer -> 404
+  PATCH /users/{user_id}/roles        hanya role admin/staff
+  PATCH /users/{user_id}/status
+  GET   /roles
+  POST  /roles
+
+
+================================================================================
+8. ATURAN BISNIS YANG HARUS DIIKUTI FRONTEND
+================================================================================
+
+METODE PENGIRIMAN (delivery_method):
+  store    ambil di toko, ongkir otomatis 0
+  courier  wajib shipping_address, ongkir ditanggung customer
+  custom   wajib delivery_note (biasanya untuk event)
+
+METODE PEMBAYARAN (payment_method):
+  midtrans default, bayar online lewat Snap
+  cash     hanya boleh untuk store/custom; courier + cash ditolak 422
+
+STATUS PESANAN:
+  pending_payment -> paid -> processing -> shipped -> completed
+  cancelled dapat dari pending_payment/paid/processing (sebelum shipped).
+  Saat cancelled, stok otomatis dikembalikan backend.
+
+ONGKIR & PENDAPATAN:
+  total = subtotal + shipping_cost
+  Pendapatan admin dihitung dari SUBTOTAL saja (ongkir bukan pendapatan toko),
+  untuk status paid, processing, shipped, completed.
+
+PESANAN CASH:
+  Checkout cash menghasilkan status pending_payment.
+  Staff menandai lunas lewat PATCH /admin/orders/{id}/mark-paid
+  (cashier_id terisi otomatis).
+
+MODE KASIR / POS (event):
+  POST /admin/pos/orders membuat pesanan langsung paid + cash,
+  tanpa akun customer, stok langsung berkurang.
+  Body:
+  {
+    "items": [{ "product_id": 1, "quantity": 2 }],
+    "customer_name": "Pembeli Event",
+    "customer_phone": "08123456789",
+    "delivery_method": "custom",
+    "delivery_note": "Booth Anime Expo hall B"
+  }
+
+ROLE:
+  customer : katalog, search, like, keranjang, checkout, bayar, riwayat
+  staff    : semua customer + produk, pesanan, resi, pendapatan, POS
+  admin    : semua staff + akun admin/staff, role, hapus produk
+
+RESI:
+  Hanya bisa diisi setelah pesanan dibayar (bukan pending_payment/cancelled).
+  Simpan kode resi apa adanya; backend tidak integrasi kurir.
+
+
+================================================================================
+9. ALUR PEMBAYARAN MIDTRANS (SNAP)
+================================================================================
+
+1. Customer checkout dengan payment_method = "midtrans".
+   Backend membuat order status pending_payment dan mengurangi stok.
+2. Frontend memanggil POST /payments/midtrans/{order_id}.
+   Respons: { order_number, token, redirect_url, client_key, snap_js_url }.
+3. Muat snap.js dari snap_js_url, lalu:
+     window.snap.pay(token, {
+       onSuccess: ..., onPending: ..., onError: ..., onClose: ...
+     })
+   Atau arahkan user ke redirect_url.
+4. Midtrans mengirim webhook ke
+   POST /payments/midtrans/notification.
+   Backend memverifikasi signature SHA512 dan mengubah status menjadi paid
+   (atau cancelled + restock bila gagal/expired).
+5. Frontend cukup polling GET /orders/{id} atau refresh halaman untuk melihat
+   status terbaru. Jangan menandai lunas dari frontend.
+
+Keamanan:
+- Jangan pernah menaruh MIDTRANS_SERVER_KEY di frontend.
+- Jangan memalsukan status paid dari frontend; hanya webhook yang boleh.
+
+
+================================================================================
+10. PEKERJAAN YANG SUDAH DILAKUKAN AI
+================================================================================
+
+Pada sesi ini AI:
+1. Membaca struktur frontend (masih template Vue 3 + Vite, router kosong,
+   App.vue masih "You did it!").
+2. Membuat `frontend/.env` berisi konfigurasi API backend, auth, Midtrans,
+   dan format toko yang sesuai dengan backend/.env (localhost:5173 -> 8000).
+3. Membuat `frontend/.env.example` sebagai template tanpa nilai sensitif.
+4. Membuat `frontend/docs.txt` (dokumen ini).
+5. Membuat `frontend/llms.txt` (ringkasan konteks untuk LLM/agent).
+
+Yang BELUM dikerjakan (kandidat langkah berikutnya):
+- Mengisi src/router/index.ts dengan route nyata (home, katalog, detail,
+  keranjang, checkout, riwayat, login/register, admin).
+- Mengganti App.vue template dengan layout toko.
+- Membuat API client (fetch wrapper) + penyimpanan token & auto-refresh.
+- Halaman katalog + search/filter, detail produk, like.
+- Halaman keranjang & checkout (pilih delivery_method + payment_method).
+- Halaman pembayaran Snap dan status pesanan.
+- Dashboard admin: produk, pesanan, resi, pendapatan, POS.
+- Guard route berdasarkan role (customer/staff/admin).
+
+
+================================================================================
+11. CATATAN PENGUJIAN BACKEND
+================================================================================
+
+Backend sudah diuji end-to-end:
+- 56/56 check untuk auth, RBAC, produk, like, keranjang, checkout,
+  pembatalan, status pesanan, resi, pendapatan, dan index akun admin/staff.
+- 35/35 check untuk search/filter, metode pembayaran, Midtrans Snap (mocked),
+  signature webhook, cash mark-paid, POS, dan breakdown pendapatan.
+- Alembic berada di head `ae3d0ed6d0d6` dan `alembic check` bersih.
+- Akun admin aktif: furina@admin.com / 123 (id 26, role admin).
+
+Batasan saat ini:
+- Key Midtrans di backend masih placeholder -> endpoint Snap mengembalikan 503.
+- Belum ada git repo di root proyek.
