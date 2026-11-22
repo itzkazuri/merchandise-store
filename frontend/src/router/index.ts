@@ -8,6 +8,11 @@ export const routes: RouteRecordRaw[] = [
       component: () => import('@/views/HomeView.vue'),
     },
     {
+      path: '/produk/:slug',
+      name: 'product-detail',
+      component: () => import('@/views/ProductDetailView.vue'),
+    },
+    {
       path: '/keranjang',
       name: 'cart',
       component: () => import('@/views/CartView.vue'),
@@ -95,7 +100,8 @@ export function createAppRouter(
     const profile = await auth.fetchProfile()
     const roles = (to.meta.roles as string[] | undefined) || []
     if (!profile) return { name: 'login', query: { redirect: to.fullPath } }
-    if (!hasAnyRole(profile, roles)) return { name: 'home' }
+    // Route seperti /pesanan hanya butuh login, tanpa role khusus.
+    if (roles.length > 0 && !hasAnyRole(profile, roles)) return { name: 'home' }
     return true
   })
 

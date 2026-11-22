@@ -434,7 +434,7 @@ onBeforeUnmount(() => {
         >
           <ShoppingBag :size="17" :stroke-width="2.4" class="sm:hidden" />
           <ShoppingBag :size="19" :stroke-width="2.4" class="hidden sm:block" />
-          <span class="hidden xs:inline">Keranjang</span>
+          <span class="hidden sm:inline">Keranjang</span>
           <span
             id="cartCount"
             :key="cartCount"

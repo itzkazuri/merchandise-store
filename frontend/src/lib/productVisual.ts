@@ -95,13 +95,19 @@ export function primaryImage(product: CatalogProduct): CatalogImage | null {
   return images.find((image) => image.is_primary) || images[0] || null
 }
 
+/** URL gambar: pakai URL publik dari API bila ada, lalu fallback ke object key. */
+export function catalogImageUrl(image?: CatalogImage | null): string | null {
+  if (!image) return null
+  return image.url || imageUrl(image.object_key)
+}
+
 export function productImageUrl(product: CatalogProduct, width = 640, quality = IMAGE_QUALITY): string | null {
-  return optimizedImageUrl(imageUrl(primaryImage(product)?.object_key), width, quality)
+  return optimizedImageUrl(catalogImageUrl(primaryImage(product)), width, quality)
 }
 
 export function productImageSrcSet(product: CatalogProduct, maxWidth = 640, quality = IMAGE_QUALITY): string | undefined {
   if (!IMAGE_OPTIMIZER_TEMPLATE) return undefined
-  const rawUrl = imageUrl(primaryImage(product)?.object_key)
+  const rawUrl = catalogImageUrl(primaryImage(product))
   if (!rawUrl) return undefined
   const max = Math.max(64, Math.round(maxWidth))
   const widths = [...new Set([160, 256, 320, 480, 640, 960, max].filter((width) => width <= max))]
@@ -112,20 +118,32 @@ export function productImageSrcSet(product: CatalogProduct, maxWidth = 640, qual
 
 /** Label seri asal produk: anime, lalu jenis produk, lalu fallback toko. */
 export function productSeries(product: CatalogProduct): string {
-  return product.anime?.name || product.category?.name || 'Mochibako Collection'
+  return product.anime?.name || product.category?.name || product.series || 'Mochibako Collection'
 }
 
 export function productCategoryLabel(product: CatalogProduct): string {
-  return product.category?.name || (product.product_type === 'handmade' ? 'Handmade' : 'Imported')
+  return product.category?.name || product.cat || (product.product_type === 'handmade' ? 'Handmade' : 'Imported')
 }
 
 export function productSpec(product: CatalogProduct): string {
+  const spec = (product.spec || '').trim()
+  if (spec) return spec
   const description = (product.description || '').trim()
   if (description) return description.length > 70 ? `${description.slice(0, 70).trimEnd()}…` : description
   return product.product_type === 'handmade' ? 'Karya tangan UMKM lokal' : 'Produk impor pilihan'
 }
 
+/** Pre-order ditandai lewat badge atau kata kunci di nama/deskripsi produk. */
+export function isPreorder(product: CatalogProduct): boolean {
+  const text = [product.badge, product.name, product.spec, product.description]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+  return /pre[\s-]?order|open\s+po\b/.test(text)
+}
+
 export function productBadge(product: CatalogProduct): string {
+  if (isPreorder(product)) return 'Pre-order'
   if (product.stock <= 0) return 'Habis'
   if (product.stock <= 3) return `Sisa ${product.stock}`
   return ''
@@ -144,6 +162,6 @@ export function decorateProduct(product: CatalogProduct): CatalogProduct {
     spec: productSpec(product),
     color: visual.color,
     icon: visual.icon,
-    badge: productBadge(product),
+    badge: product.badge || productBadge(product),
   }
 }

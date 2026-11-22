@@ -3,6 +3,7 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vueDevTools from 'vite-plugin-vue-devtools'
 import tailwindcss from '@tailwindcss/vite'
+import { imageOptimizerPlugin } from './scripts/vite-plugin-image-optimizer'
 
 // https://vite.dev/config/
 export default defineConfig(({ isSsrBuild }) => ({
@@ -10,6 +11,7 @@ export default defineConfig(({ isSsrBuild }) => ({
     vue(),
     vueDevTools(),
     tailwindcss(),
+    imageOptimizerPlugin(),
   ],
   resolve: {
     alias: {

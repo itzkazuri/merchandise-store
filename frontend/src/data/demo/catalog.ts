@@ -1,8 +1,13 @@
-import type { CategoryItem, CatalogProduct } from '@/types/catalog'
+/**
+ * DATA DEMO / DEBUG — bukan data backend.
+ * Hanya dimuat oleh useHomeCatalog saat VITE_ENABLE_DEMO_CATALOG aktif
+ * atau saat development, ketika API katalog masih kosong.
+ */
+import type { CatalogProduct, Category } from '@/types/catalog'
 
 const now = new Date().toISOString()
 
-export const sampleProducts: CatalogProduct[] = [
+export const demoProducts: CatalogProduct[] = [
   {
     id: 1,
     name: 'Hoshina Magical Girl 1/7',
@@ -15,6 +20,7 @@ export const sampleProducts: CatalogProduct[] = [
     icon: 'wand-sparkles',
     badge: 'Pre-order',
     stock: 8,
+    sold_count: 42,
     isLiked: false,
     sku: 'MOCHI-001',
     product_type: 'imported',
@@ -34,6 +40,7 @@ export const sampleProducts: CatalogProduct[] = [
     icon: 'cat',
     badge: 'Baru',
     stock: 15,
+    sold_count: 128,
     isLiked: false,
     sku: 'MOCHI-002',
     product_type: 'handmade',
@@ -53,6 +60,7 @@ export const sampleProducts: CatalogProduct[] = [
     icon: 'gift',
     badge: 'Sisa 12',
     stock: 12,
+    sold_count: 210,
     isLiked: false,
     sku: 'MOCHI-003',
     product_type: 'imported',
@@ -72,6 +80,7 @@ export const sampleProducts: CatalogProduct[] = [
     icon: 'key-round',
     badge: '',
     stock: 25,
+    sold_count: 86,
     isLiked: false,
     sku: 'MOCHI-004',
     product_type: 'handmade',
@@ -91,6 +100,7 @@ export const sampleProducts: CatalogProduct[] = [
     icon: 'image',
     badge: '',
     stock: 10,
+    sold_count: 64,
     isLiked: false,
     sku: 'MOCHI-005',
     product_type: 'handmade',
@@ -110,6 +120,7 @@ export const sampleProducts: CatalogProduct[] = [
     icon: 'shirt',
     badge: 'Terbatas',
     stock: 6,
+    sold_count: 51,
     isLiked: false,
     sku: 'MOCHI-006',
     product_type: 'imported',
@@ -129,6 +140,7 @@ export const sampleProducts: CatalogProduct[] = [
     icon: 'smile',
     badge: '',
     stock: 14,
+    sold_count: 97,
     isLiked: false,
     sku: 'MOCHI-007',
     product_type: 'imported',
@@ -146,8 +158,9 @@ export const sampleProducts: CatalogProduct[] = [
     rate: 4.7,
     color: 'bg-sky',
     icon: 'cloud',
-    badge: 'Baru',
+    badge: 'Pre-order',
     stock: 9,
+    sold_count: 18,
     isLiked: false,
     sku: 'MOCHI-008',
     product_type: 'handmade',
@@ -167,6 +180,7 @@ export const sampleProducts: CatalogProduct[] = [
     icon: 'sticker',
     badge: '',
     stock: 30,
+    sold_count: 154,
     isLiked: false,
     sku: 'MOCHI-009',
     product_type: 'handmade',
@@ -186,6 +200,7 @@ export const sampleProducts: CatalogProduct[] = [
     icon: 'coffee',
     badge: '',
     stock: 18,
+    sold_count: 74,
     isLiked: false,
     sku: 'MOCHI-010',
     product_type: 'handmade',
@@ -203,8 +218,9 @@ export const sampleProducts: CatalogProduct[] = [
     rate: 4.6,
     color: 'bg-sky',
     icon: 'shopping-bag',
-    badge: '',
+    badge: 'Pre-order',
     stock: 11,
+    sold_count: 12,
     isLiked: false,
     sku: 'MOCHI-011',
     product_type: 'imported',
@@ -224,6 +240,7 @@ export const sampleProducts: CatalogProduct[] = [
     icon: 'box',
     badge: '',
     stock: 16,
+    sold_count: 188,
     isLiked: false,
     sku: 'MOCHI-012',
     product_type: 'imported',
@@ -233,12 +250,42 @@ export const sampleProducts: CatalogProduct[] = [
   },
 ]
 
-export const sampleCategories: CategoryItem[] = [
-  { name: 'Semua', icon: 'layout-grid', bg: 'bg-white' },
-  { name: 'Figure', icon: 'crown', bg: 'bg-sun' },
-  { name: 'Plushie', icon: 'heart', bg: 'bg-pinky' },
-  { name: 'Blind Box', icon: 'gift', bg: 'bg-lilac' },
-  { name: 'Aksesori', icon: 'key-round', bg: 'bg-mint' },
-  { name: 'Cetak', icon: 'image', bg: 'bg-sky' },
-  { name: 'Apparel', icon: 'shirt', bg: 'bg-sun' },
+const rawDemoCategories: Array<Pick<Category, 'name' | 'slug' | 'sort_order'>> = [
+  { name: 'Figure', slug: 'figure', sort_order: 0 },
+  { name: 'Plushie', slug: 'plushie', sort_order: 1 },
+  { name: 'Blind Box', slug: 'blind-box', sort_order: 2 },
+  { name: 'Aksesori', slug: 'aksesori', sort_order: 3 },
+  { name: 'Cetak', slug: 'cetak', sort_order: 4 },
+  { name: 'Apparel', slug: 'apparel', sort_order: 5 },
 ]
+
+export const demoCategories: Category[] = rawDemoCategories.map((category, index) => ({
+  id: -(index + 1),
+  kind: 'product',
+  name: category.name,
+  slug: category.slug,
+  is_active: true,
+  sort_order: category.sort_order,
+  product_count: demoProducts.filter(
+    (product) => product.cat?.toLowerCase().replace(/\s+/g, '-') === category.slug,
+  ).length,
+}))
+
+const categoryBySlug = new Map(demoCategories.map((category) => [category.slug, category]))
+
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[^\w\s/-]/g, '')
+    .trim()
+    .replace(/[\s/_]+/g, '-')
+}
+
+// Sambungkan produk demo ke kategori dan beri slug supaya kartu produk
+// bisa membuka halaman detail statis saat backend belum punya data.
+for (const product of demoProducts) {
+  const slug = product.cat?.toLowerCase().replace(/\s+/g, '-')
+  if (slug) product.category = categoryBySlug.get(slug) ?? null
+  if (!product.slug) product.slug = slugify(product.name)
+}

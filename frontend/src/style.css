@@ -1,6 +1,8 @@
 @import "tailwindcss";
 
 @theme {
+  --breakpoint-xs: 24rem;
+
   --font-body: 'Nunito', sans-serif;
   --font-head: 'Fredoka', sans-serif;
   --font-sans: 'Nunito', sans-serif;

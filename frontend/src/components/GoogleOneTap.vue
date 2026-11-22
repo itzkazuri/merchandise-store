@@ -46,10 +46,11 @@ onMounted(() => {
     <div
       v-if="!isAuthenticated && !dismissed && showFloatingPrompt && !googleNativeActive"
       class="fixed z-40
-             top-[4.25rem] sm:top-20
+             top-[6.5rem] sm:top-[7.25rem] md:top-20
              right-2.5 sm:right-5
              left-2.5 sm:left-auto
-             w-auto sm:max-w-[320px] sm:w-full"
+             w-auto max-h-[calc(100dvh-8rem)] overflow-y-auto
+             sm:max-w-[320px] sm:w-full"
     >
       <div
         class="nb relative bg-white

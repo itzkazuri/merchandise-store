@@ -15,16 +15,24 @@ class ProductImageOut(BaseModel):
 
     id: int
     object_key: str
+    url: str
     alt_text: str | None = None
     is_primary: bool
     sort_order: int
     created_at: datetime
 
 
+class ProductImageUploadOut(BaseModel):
+    object_key: str
+    url: str
+    content_type: str
+    size: int
+
+
 class ProductImageCreate(BaseModel):
     object_key: str = Field(
         max_length=500,
-        examples=["products/2026/11/figur-gojo.webp"],
+        examples=["2026/11/figur-gojo.webp"],
         description="Path object di RustFS/S3",
     )
     alt_text: str | None = Field(default=None, max_length=255)

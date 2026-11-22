@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Plus, RefreshCw, Trash2 } from 'lucide-vue-next'
+import { ImagePlus, Loader2, RefreshCw, Trash2, Upload } from 'lucide-vue-next'
 import AdminDialog from '@/components/ui/AdminDialog.vue'
 import AdminButton from '@/components/ui/AdminButton.vue'
 import AdminState from '@/components/ui/AdminState.vue'
@@ -10,7 +10,10 @@ import { imageUrl, optimizedImageUrl } from '@/lib/productVisual'
 import type { CatalogImage, CatalogProduct, Category } from '@/types/catalog'
 
 interface ProductDraft { name: string; slug: string; sku: string; description: string; product_type: 'imported' | 'handmade'; price: string; stock: number; status: 'draft' | 'active' | 'archived'; anime_id: number | null; category_id: number | null }
-interface ImageDraft { key: string; id?: number; object_key: string; alt_text: string; is_primary: boolean; sort_order: number; existing: boolean }
+interface ImageDraft { key: string; id?: number; object_key: string; url?: string; preview_url?: string; alt_text: string; is_primary: boolean; sort_order: number; existing: boolean; uploading?: boolean }
+
+const IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,image/avif'
+const MAX_IMAGE_MB = 5
 
 const props = defineProps<{ modelValue: boolean; product: CatalogProduct | null }>()
 const emit = defineEmits<{ 'update:modelValue': [value: boolean]; saved: [] }>()
@@ -28,6 +31,10 @@ const animes = ref<Category[]>([])
 const productCategories = ref<Category[]>([])
 const categoriesLoading = ref(false)
 const categoriesError = ref('')
+const fileInput = ref<HTMLInputElement | null>(null)
+const replaceTargetKey = ref<string | null>(null)
+const uploadingCount = ref(0)
+const isUploading = computed(() => uploadingCount.value > 0)
 
 async function loadCategories() {
   if (categoriesLoading.value) return
@@ -85,10 +92,14 @@ watch(() => draft.value.name, () => { if (!skuManual.value) generateSku() })
 watch(() => draft.value.product_type, () => { if (!skuManual.value) generateSku() })
 
 function imageDraft(image: CatalogImage, index: number): ImageDraft {
-  return { key: `existing-${image.id}`, id: image.id, object_key: image.object_key, alt_text: image.alt_text || '', is_primary: image.is_primary, sort_order: image.sort_order ?? index, existing: true }
+  return { key: `existing-${image.id}`, id: image.id, object_key: image.object_key, url: image.url || undefined, alt_text: image.alt_text || '', is_primary: image.is_primary, sort_order: image.sort_order ?? index, existing: true }
+}
+function revokePreview(image?: ImageDraft | null) {
+  if (image?.preview_url) URL.revokeObjectURL(image.preview_url)
 }
 function reset() {
-  error.value = ''; removedImageIds.value = []; primaryImageKey.value = ''
+  error.value = ''; removedImageIds.value = []; primaryImageKey.value = ''; replaceTargetKey.value = null; uploadingCount.value = 0
+  images.value.forEach(revokePreview)
   const product = props.product
   draft.value = product ? {
     name: product.name, slug: product.slug || '', sku: product.sku || '', description: product.description || '',
@@ -104,15 +115,92 @@ function reset() {
 }
 watch(() => [props.modelValue, props.product] as const, ([open]) => { if (open) { reset(); void loadCategories() } })
 
-function addImage() {
-  const key = `new-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-  images.value.push({ key, object_key: '', alt_text: '', is_primary: false, sort_order: images.value.length, existing: false })
+/* ---------- Upload gambar ----------
+   Admin memilih file langsung; file dikirim ke endpoint upload backend,
+   lalu object key hasilnya disimpan bersama produk. Tidak ada input URL. */
+function openFilePicker(targetKey: string | null = null) {
+  if (isUploading.value) return
+  replaceTargetKey.value = targetKey
+  fileInput.value?.click()
 }
 function removeImage(index: number) {
   const [removed] = images.value.splice(index, 1)
+  revokePreview(removed)
   if (removed?.id) removedImageIds.value.push(removed.id)
   if (primaryImageKey.value === removed?.key) primaryImageKey.value = images.value[0]?.key || ''
   images.value.forEach((image, order) => { image.sort_order = order })
+}
+
+async function uploadFile(file: File): Promise<string | null> {
+  error.value = ''
+  if (!file.type.startsWith('image/')) {
+    error.value = `"${file.name}" bukan file gambar.`
+    return null
+  }
+  if (file.size > MAX_IMAGE_MB * 1024 * 1024) {
+    error.value = `"${file.name}" terlalu besar. Maksimal ${MAX_IMAGE_MB} MB per gambar.`
+    return null
+  }
+
+  const key = `upload-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+  const draftImage: ImageDraft = {
+    key,
+    object_key: '',
+    preview_url: URL.createObjectURL(file),
+    alt_text: draft.value.name || '',
+    is_primary: false,
+    sort_order: images.value.length,
+    existing: false,
+    uploading: true,
+  }
+  images.value.push(draftImage)
+  uploadingCount.value += 1
+
+  try {
+    const uploaded = await adminApi.uploadProductImage(file)
+    const target = images.value.find((image) => image.key === key)
+    if (!target) return null
+    revokePreview(target)
+    target.preview_url = undefined
+    target.object_key = uploaded.object_key
+    target.url = uploaded.url
+    target.uploading = false
+    if (!primaryImageKey.value) primaryImageKey.value = key
+    return key
+  } catch (cause) {
+    const index = images.value.findIndex((image) => image.key === key)
+    if (index >= 0) removeImage(index)
+    error.value = cause instanceof ApiError ? cause.message : `"${file.name}" gagal diunggah. Coba lagi.`
+    return null
+  } finally {
+    uploadingCount.value = Math.max(0, uploadingCount.value - 1)
+  }
+}
+
+async function handleFileInput(event: Event) {
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files || [])
+  const replaceKey = replaceTargetKey.value
+  input.value = ''
+  replaceTargetKey.value = null
+  if (!files.length) return
+
+  let primaryMoved = false
+  if (replaceKey) {
+    const index = images.value.findIndex((image) => image.key === replaceKey)
+    if (index >= 0) {
+      primaryMoved = primaryImageKey.value === replaceKey
+      removeImage(index)
+    }
+  }
+
+  for (const file of files) {
+    const key = await uploadFile(file)
+    if (primaryMoved && key) {
+      primaryImageKey.value = key
+      primaryMoved = false
+    }
+  }
 }
 
 async function syncImages(productId: number, isNew: boolean) {
@@ -145,7 +233,8 @@ async function submit() {
   if (!draft.value.sku.trim()) generateSku()
   if (!draft.value.sku.trim()) { error.value = 'SKU belum terisi. Isi nama produk atau tulis SKU manual.'; return }
   if (String(draft.value.price).trim() === '' || Number(draft.value.price) < 0) { error.value = 'Masukkan harga nol atau lebih.'; return }
-  if (images.value.some((image) => !image.object_key.trim())) { error.value = 'Lengkapi object key gambar atau hapus baris gambar yang kosong.'; return }
+  if (isUploading.value) { error.value = 'Tunggu proses upload gambar selesai.'; return }
+  if (images.value.some((image) => !image.object_key.trim())) { error.value = 'Ada gambar yang belum selesai diunggah. Hapus lalu unggah ulang.'; return }
   busy.value = true
   try {
     const payload = { ...draft.value, slug: draft.value.slug.trim() || null, price: Number(draft.value.price), stock: Number(draft.value.stock) }
@@ -268,22 +357,30 @@ async function submit() {
         <header class="product-form__head product-form__head--row">
           <div>
             <h3>Gambar produk</h3>
-            <p>Backend menerima object key RustFS/S3; endpoint upload file belum tersedia.</p>
+            <p>Unggah file JPG, PNG, WebP, GIF, atau AVIF. Maksimal {{ MAX_IMAGE_MB }} MB per gambar.</p>
           </div>
-          <AdminButton type="button" variant="secondary" @click="addImage"><Plus :size="15" /> Tambah gambar</AdminButton>
+          <AdminButton type="button" variant="secondary" :disabled="isUploading" @click="openFilePicker()">
+            <Upload :size="15" /> Unggah gambar
+          </AdminButton>
         </header>
+
+        <input
+          ref="fileInput"
+          type="file"
+          class="product-form__file-input"
+          :accept="IMAGE_ACCEPT"
+          multiple
+          @change="handleFileInput"
+        />
+
         <div v-if="images.length" class="product-form__images">
           <div v-for="(image, index) in images" :key="image.key" class="product-image-row">
             <div class="product-image-row__mark" aria-hidden="true">{{ String(index + 1).padStart(2, '0') }}</div>
             <div class="product-image-row__fields">
-              <label class="admin-field product-image-row__full">
-                <span>Object key <b aria-hidden="true">*</b></span>
-                <input v-model.trim="image.object_key" :name="`image-${index}-object-key`" required maxlength="500" :readonly="image.existing" placeholder="products/2026/11/figur-gojo.webp" />
-              </label>
-              <p v-if="image.existing" class="product-image-key-note">Object key tersimpan bersifat tetap. Hapus lalu tambahkan gambar baru untuk menggantinya.</p>
-              <div v-if="imageUrl(image.object_key)" class="product-image-preview">
+              <div class="product-image-preview">
                 <img
-                  :src="optimizedImageUrl(imageUrl(image.object_key), 320) || undefined"
+                  v-if="image.preview_url || image.url || imageUrl(image.object_key)"
+                  :src="optimizedImageUrl(image.preview_url || image.url || imageUrl(image.object_key), 320) || undefined"
                   :alt="image.alt_text || draft.name || 'Pratinjau gambar produk'"
                   width="320"
                   height="320"
@@ -292,27 +389,46 @@ async function submit() {
                   fetchpriority="low"
                   sizes="240px"
                 />
+                <div v-else class="product-image-preview__placeholder">
+                  <ImagePlus :size="22" />
+                  <span>Belum ada file</span>
+                </div>
+                <span v-if="image.uploading" class="product-image-preview__loading">
+                  <Loader2 :size="16" class="product-image-preview__spin" /> Mengunggah…
+                </span>
               </div>
+
               <label class="admin-field">
                 <span>Teks alternatif</span>
                 <input v-model.trim="image.alt_text" :name="`image-${index}-alt`" maxlength="255" placeholder="Figur Gojo Satoru tampak depan" />
               </label>
-              <label class="product-image-primary">
-                <input v-model="primaryImageKey" type="radio" name="primary-image" :value="image.key" />
-                <span>Gambar utama</span>
-              </label>
+
+              <div class="product-image-row__side">
+                <label class="product-image-primary">
+                  <input v-model="primaryImageKey" type="radio" name="primary-image" :value="image.key" />
+                  <span>Gambar utama</span>
+                </label>
+                <button
+                  type="button"
+                  class="admin-field__link"
+                  :disabled="image.uploading || isUploading"
+                  @click="openFilePicker(image.key)"
+                >
+                  <RefreshCw :size="12" /> Ganti file
+                </button>
+              </div>
             </div>
             <button type="button" class="admin-icon-button product-image-row__remove" :aria-label="`Hapus gambar ${index + 1}`" @click="removeImage(index)"><Trash2 :size="16" /></button>
           </div>
         </div>
-        <p v-else class="product-form__empty-images">Belum ada gambar. Tambahkan object key gambar utama agar produk punya visual katalog.</p>
+        <p v-else class="product-form__empty-images">Belum ada gambar. Unggah minimal satu gambar agar produk punya visual di katalog.</p>
       </section>
 
       <AdminState v-if="error" kind="error" :message="error" />
     </form>
     <template #footer>
       <AdminButton variant="secondary" :disabled="busy" @click="emit('update:modelValue', false)">Batal</AdminButton>
-      <AdminButton type="submit" variant="primary" :disabled="busy" form="admin-product-form">{{ busy ? 'Menyimpan…' : isEditing ? 'Simpan perubahan' : 'Buat produk' }}</AdminButton>
+      <AdminButton type="submit" variant="primary" :disabled="busy || isUploading" form="admin-product-form">{{ busy ? 'Menyimpan…' : isUploading ? 'Menunggu upload…' : isEditing ? 'Simpan perubahan' : 'Buat produk' }}</AdminButton>
     </template>
   </AdminDialog>
 </template>
@@ -483,6 +599,10 @@ async function submit() {
 }
 
 /* ---------- Gambar ---------- */
+.product-form__file-input {
+  display: none;
+}
+
 .product-form__images {
   display: grid;
   gap: 10px;
@@ -525,6 +645,7 @@ async function submit() {
 
 .product-image-preview {
   grid-column: 1 / -1;
+  position: relative;
   width: min(100%, 240px);
   aspect-ratio: 4 / 3;
   overflow: hidden;
@@ -538,6 +659,56 @@ async function submit() {
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+
+.product-image-preview__placeholder {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 100%;
+  color: #9a917e;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.product-image-preview__loading {
+  position: absolute;
+  inset: auto 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px;
+  background: rgb(27 36 48 / 82%);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.product-image-preview__spin {
+  animation: product-image-spin 0.9s linear infinite;
+}
+
+@keyframes product-image-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.product-image-row__side {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-self: end;
+}
+
+.product-image-row__side .admin-field__link:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .product-image-key-note {

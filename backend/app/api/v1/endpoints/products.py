@@ -3,24 +3,27 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, File, HTTPException, Query, Response, UploadFile
 from fastapi import status as http_status
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import AdminUser, CurrentUser, DbSession, OptionalUser, StaffUser
+from app.core.config import settings
 from app.core.utils import slugify
 from app.models import Category, Product, ProductImage, ProductLike, User
 from app.schemas.category import CategoryOut
 from app.schemas.common import Page
 from app.services.products import serialize_products
+from app.services.storage import StorageError, upload_product_image
 from app.schemas.product import (
     LikeStatus,
     ProductCreate,
     ProductImageCreate,
     ProductImageOut,
     ProductImageUpdate,
+    ProductImageUploadOut,
     ProductFilters,
     ProductOut,
     ProductUpdate,
@@ -113,6 +116,14 @@ def _build_product_query(
                 Product.sku.ilike(keyword),
                 Product.slug.ilike(keyword),
                 Product.description.ilike(keyword),
+                # Cari berdasarkan seri anime / jenis produk juga, supaya
+                # ketik "Naruto" atau "Figure" tetap menemukan produknya.
+                Product.anime.has(
+                    or_(Category.name.ilike(keyword), Category.slug.ilike(keyword))
+                ),
+                Product.category.has(
+                    or_(Category.name.ilike(keyword), Category.slug.ilike(keyword))
+                ),
             )
         )
 
@@ -448,6 +459,45 @@ def delete_product(product_id: int, admin: AdminUser, db: DbSession) -> Response
     db.delete(product)
     db.commit()
     return Response(status_code=http_status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/images/upload",
+    response_model=ProductImageUploadOut,
+    status_code=http_status.HTTP_201_CREATED,
+    summary="Upload file gambar produk (staff/admin)",
+)
+def upload_product_image_file(
+    staff: StaffUser,
+    file: UploadFile = File(..., description="File gambar JPG/PNG/WebP/GIF/AVIF"),
+) -> ProductImageUploadOut:
+    """Terima file gambar dari admin, simpan ke RustFS/S3, kembalikan object key.
+
+    Endpoint ini tidak butuh product_id karena form admin mengunggah gambar
+    lebih dulu, baru menyambungkannya ke produk yang dibuat/diubah.
+    """
+    limit = max(1, settings.MAX_UPLOAD_MB) * 1024 * 1024
+    data = file.file.read(limit + 1)
+
+    if not data:
+        raise HTTPException(http_status.HTTP_400_BAD_REQUEST, "File gambar kosong.")
+    if len(data) > limit:
+        raise HTTPException(
+            http_status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            f"Ukuran gambar maksimal {settings.MAX_UPLOAD_MB} MB.",
+        )
+
+    try:
+        stored = upload_product_image(data)
+    except StorageError as exc:
+        raise HTTPException(http_status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+
+    return ProductImageUploadOut(
+        object_key=stored.object_key,
+        url=stored.url,
+        content_type=stored.content_type,
+        size=stored.size,
+    )
 
 
 @router.post(

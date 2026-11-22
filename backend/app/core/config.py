@@ -79,9 +79,12 @@ class Settings(BaseSettings):
     S3_SECRET_KEY: str = ""
     S3_REGION: str = "us-east-1"
 
-    S3_BUCKET_PRODUCTS: str = "products"
+    S3_BUCKET_PRODUCTS: str = "merchandise-bucket"
     S3_BUCKET_PRIVATE: str = "private"
     S3_USE_SSL: bool = False
+
+    # Batas ukuran file gambar produk yang diunggah lewat admin.
+    MAX_UPLOAD_MB: int = 5
 
     # ==========================================
     # MIDTRANS PAYMENT GATEWAY

@@ -254,7 +254,7 @@ onBeforeUnmount(() => {
   <section
     v-if="total"
     ref="rootEl"
-    class="max-w-6xl mx-auto px-2.5 xs:px-3 sm:px-5 mt-2.5 sm:mt-5 md:mt-6"
+    class="w-full max-w-6xl mx-auto px-2.5 xs:px-3 sm:px-5 mt-2.5 sm:mt-5 md:mt-6"
     aria-roledescription="carousel"
     aria-label="Banner dan produk pilihan Mochibako"
     tabindex="0"
@@ -285,7 +285,7 @@ onBeforeUnmount(() => {
             v-for="(banner, index) in banners"
             :key="banner.id"
             class="relative shrink-0 overflow-hidden
-                   px-5 xs:px-6 sm:px-12 md:px-16 lg:px-20
+                   px-5 xs:px-6 sm:px-16 md:px-20 lg:px-24
                    py-5 xs:py-6 sm:py-9 md:py-10
                    min-h-[220px] xs:min-h-[240px] sm:min-h-[300px] md:min-h-[340px] lg:min-h-[368px]
                    flex items-center"
@@ -547,7 +547,7 @@ onBeforeUnmount(() => {
           type="button"
           class="btn absolute left-1 sm:left-2 top-1/2 -translate-y-1/2 z-20
                  w-7 h-7 sm:w-9 sm:h-9 md:w-10 md:h-10
-                 grid place-items-center bg-white/95"
+                 hidden sm:grid place-items-center bg-white/95"
           aria-label="Banner sebelumnya"
           @click="prev"
         >
@@ -558,7 +558,7 @@ onBeforeUnmount(() => {
           type="button"
           class="btn absolute right-1 sm:right-2 top-1/2 -translate-y-1/2 z-20
                  w-7 h-7 sm:w-9 sm:h-9 md:w-10 md:h-10
-                 grid place-items-center bg-white/95"
+                 hidden sm:grid place-items-center bg-white/95"
           aria-label="Banner berikutnya"
           @click="next"
         >
@@ -631,26 +631,5 @@ onBeforeUnmount(() => {
   animation-name: banner-progress;
   animation-timing-function: linear;
   animation-fill-mode: forwards;
-}
-
-/* Extra small breakpoint untuk HP kecil & fold portrait */
-@media (min-width: 380px) {
-  .xs\:px-3 { padding-left: 0.75rem; padding-right: 0.75rem; }
-  .xs\:px-6 { padding-left: 1.5rem; padding-right: 1.5rem; }
-  .xs\:py-6 { padding-top: 1.5rem; padding-bottom: 1.5rem; }
-  .xs\:min-h-\[240px\] { min-height: 240px; }
-  .xs\:w-24 { width: 6rem; }
-  .xs\:w-56 { width: 14rem; }
-  .xs\:h-56 { height: 14rem; }
-  .xs\:max-w-\[22rem\] { max-width: 22rem; }
-  .xs\:text-\[10px\] { font-size: 10px; }
-  .xs\:text-\[11px\] { font-size: 11px; }
-  .xs\:text-\[11\.5px\] { font-size: 11.5px; }
-  .xs\:text-\[12\.5px\] { font-size: 12.5px; }
-  .xs\:text-\[24px\] { font-size: 24px; }
-  .xs\:text-xl { font-size: 1.25rem; line-height: 1.75rem; }
-  .xs\:text-lg { font-size: 1.125rem; line-height: 1.75rem; }
-  .xs\:gap-3 { gap: 0.75rem; }
-  .xs\:block { display: block; }
 }
 </style>

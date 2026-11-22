@@ -27,7 +27,7 @@ class ProductImage(Base):
         nullable=False,
     )
 
-    # Lokasi object di RustFS (S3), contoh: products/2026/01/uuid.webp
+    # Lokasi object di RustFS (S3), contoh: 2026/01/uuid.webp
     object_key: Mapped[str] = mapped_column(String(500), nullable=False)
     alt_text: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
@@ -50,6 +50,13 @@ class ProductImage(Base):
     )
 
     product: Mapped[Product] = relationship(back_populates="images")
+
+    @property
+    def url(self) -> str:
+        """URL publik gambar, dihitung dari object key + konfigurasi storage."""
+        from app.services.storage import public_product_url
+
+        return public_product_url(self.object_key)
 
     def __repr__(self) -> str:
         return f"<ProductImage id={self.id} product_id={self.product_id}>"

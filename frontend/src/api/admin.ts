@@ -16,6 +16,11 @@ export const adminApi = {
   updateCategory: (id: number, body: Record<string, unknown>) => apiRequest(`/categories/${id}`, { method: 'PATCH', body }),
   deleteCategory: (id: number) => apiRequest<void>(`/categories/${id}`, { method: 'DELETE' }),
   addProductImage: (id: number, body: Record<string, unknown>) => apiRequest(`/products/${id}/images`, { method: 'POST', body }),
+  uploadProductImage: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return apiRequest<{ object_key: string; url: string; content_type: string; size: number }>('/products/images/upload', { method: 'POST', body: form })
+  },
   updateProductImage: (id: number, imageId: number, body: Record<string, unknown>) => apiRequest(`/products/${id}/images/${imageId}`, { method: 'PATCH', body }),
   deleteProductImage: (id: number, imageId: number) => apiRequest<void>(`/products/${id}/images/${imageId}`, { method: 'DELETE' }),
   users: (params: Record<string, unknown> = {}) => apiRequest(`/users${queryString(params)}`),

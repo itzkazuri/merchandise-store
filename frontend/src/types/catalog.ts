@@ -1,6 +1,9 @@
+export type CatalogSort = 'newest' | 'price_asc' | 'price_desc' | 'best_seller'
+
 export interface CatalogImage {
   id: number
   object_key: string
+  url?: string | null
   alt_text: string | null
   is_primary: boolean
   sort_order: number
