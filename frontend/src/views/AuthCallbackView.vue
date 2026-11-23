@@ -28,18 +28,7 @@ onMounted(async () => {
     return
   }
 
-  const token = params.get('access_token')
-  if (!token) {
-    hasError.value = true
-    errorMessage.value = 'Token autentikasi tidak ditemukan dari server'
-    showToast(errorMessage.value)
-    setTimeout(() => {
-      router.replace('/login')
-    }, 2000)
-    return
-  }
-
-  // Token valid -> init session
+  // Backend memasang cookie HttpOnly sebelum mengarahkan kembali ke sini.
   initAuth()
   const profile = await fetchProfile()
   if (!profile) {

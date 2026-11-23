@@ -25,6 +25,8 @@ export const adminApi = {
   deleteProductImage: (id: number, imageId: number) => apiRequest<void>(`/products/${id}/images/${imageId}`, { method: 'DELETE' }),
   users: (params: Record<string, unknown> = {}) => apiRequest(`/users${queryString(params)}`),
   user: (id: number | string) => apiRequest(`/users/${id}`),
+  createUser: (body: { name: string; email: string; password: string; role: string }) => apiRequest('/users', { method: 'POST', body }),
+  updateMyProfile: (body: { name?: string; current_password?: string; new_password?: string }) => apiRequest('/users/me', { method: 'PATCH', body }),
   setUserRoles: (id: number | string, roles: string[]) => apiRequest(`/users/${id}/roles`, { method: 'PATCH', body: { roles } }),
   setUserStatus: (id: number | string, body: Record<string, unknown>) => apiRequest(`/users/${id}/status`, { method: 'PATCH', body }),
   roles: () => apiRequest('/roles'),

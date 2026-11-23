@@ -2,6 +2,7 @@
 import { RotateCcw, SearchX, Sparkles } from 'lucide-vue-next'
 import DynamicIcon from '@/components/DynamicIcon.vue'
 import ProductCard from '@/components/ProductCard.vue'
+import AppSelect from '@/components/ui/AppSelect.vue'
 import HomeSectionHeading from './HomeSectionHeading.vue'
 import type { CatalogProduct, CatalogSort } from '@/types/catalog'
 
@@ -30,12 +31,19 @@ const emit = defineEmits<{
   'update:sortOption': [value: CatalogSort]
 }>()
 
+const SORT_OPTIONS: Array<{ value: CatalogSort; label: string }> = [
+  { value: 'newest', label: 'Terbaru' },
+  { value: 'price_asc', label: 'Harga terendah' },
+  { value: 'price_desc', label: 'Harga tertinggi' },
+  { value: 'best_seller', label: 'Terlaris' },
+]
+
 function selectCategory(slug: string) {
   emit('update:selectedCategory', slug)
 }
 
-function changeSort(event: Event) {
-  emit('update:sortOption', (event.target as HTMLSelectElement).value as CatalogSort)
+function changeSort(value: CatalogSort) {
+  emit('update:sortOption', value)
 }
 </script>
 
@@ -86,18 +94,15 @@ function changeSort(event: Event) {
         >
           <RotateCcw :size="13" /> Reset
         </button>
-        <select
+        <AppSelect
           id="sort"
-          :value="sortOption"
+          :model-value="sortOption"
+          :options="SORT_OPTIONS"
           aria-label="Urutkan"
-          class="h-9 sm:h-10 shrink-0 rounded-full border-2 border-ink bg-white px-3 sm:px-4 text-xs sm:text-sm font-semibold text-ink focus:outline-none focus:border-sun"
-          @change="changeSort"
-        >
-          <option value="newest">Terbaru</option>
-          <option value="price_asc">Harga terendah</option>
-          <option value="price_desc">Harga tertinggi</option>
-          <option value="best_seller">Terlaris</option>
-        </select>
+          size="sm"
+          class="shrink-0"
+          @update:model-value="changeSort"
+        />
       </div>
     </div>
 

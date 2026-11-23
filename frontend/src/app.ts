@@ -27,11 +27,12 @@ export function createMochibakoApp(options: CreateAppOptions = {}): MochibakoApp
   app.use(router)
 
   // Global error handler: redirect ke /500 untuk unhandled runtime errors.
+  // Detail error hanya dicatat di console, TIDAK pernah ditempel ke URL
+  // supaya address bar tetap bersih dan tidak membocorkan pesan internal.
   app.config.errorHandler = (err) => {
     console.error('[App Error]', err)
-    const msg = err instanceof Error ? err.message : String(err)
     if (router.currentRoute.value.name === 'server-error') return
-    void router.replace({ name: 'server-error', query: { error: msg } }).catch(() => {})
+    void router.replace({ name: 'server-error' }).catch(() => {})
   }
 
   return { app, router }

@@ -3,9 +3,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { catalogApi } from '@/api/catalog'
 import { ApiError } from '@/api/client'
 import { useAuth } from '@/composables/useAuth'
+import { openAuthDialog } from '@/composables/useAuthDialog'
 import { useCart } from '@/composables/useCart'
 import { useToast } from '@/composables/useToast'
-import { decorateProduct, productImageUrl, productSeries, visualForCategory } from '@/lib/productVisual'
+import { catalogImageUrl, decorateProduct, primaryImage, productImageUrl, productSeries, visualForCategory } from '@/lib/productVisual'
 import { findDemoProduct, loadDemoCatalog } from '@/lib/demoCatalog'
 import type { CatalogProduct } from '@/types/catalog'
 
@@ -29,7 +30,11 @@ export function useProductDetail() {
   const lowStock = computed(() => maxStock.value > 0 && maxStock.value <= 5)
   const subtotal = computed(() => Number(product.value?.price || 0) * qty.value)
   const categoryVisual = computed(() => visualForCategory(product.value?.category || null))
-  const productImage = computed(() => (product.value ? productImageUrl(product.value) : null))
+  const productImage = computed(() => (product.value ? productImageUrl(product.value, 960) : null))
+  /** URL asli (bukan hasil optimizer) untuk og:image, JSON-LD, dan canonical. */
+  const productImageRaw = computed(() =>
+    product.value ? catalogImageUrl(primaryImage(product.value)) : null,
+  )
 
   function scoreRelated(anchor: CatalogProduct, candidate: CatalogProduct) {
     let score = 0
@@ -113,7 +118,7 @@ export function useProductDetail() {
     if (!product.value || soldOut.value) return
     if (!isAuthenticated.value) {
       showToast('Masuk dulu untuk menambah ke keranjang')
-      router.push({ name: 'login', query: { redirect: route.fullPath } })
+      openAuthDialog(route.fullPath)
       return
     }
     addToCart(product.value, qty.value)
@@ -124,7 +129,7 @@ export function useProductDetail() {
     if (!product.value || soldOut.value) return
     if (!isAuthenticated.value) {
       showToast('Masuk dulu untuk membeli')
-      router.push({ name: 'login', query: { redirect: route.fullPath } })
+      openAuthDialog(route.fullPath)
       return
     }
     addToCart(product.value, qty.value)
@@ -135,7 +140,7 @@ export function useProductDetail() {
     if (!product.value) return
     if (!isAuthenticated.value) {
       showToast('Masuk dulu untuk menyimpan produk favorit')
-      router.push({ name: 'login', query: { redirect: route.fullPath } })
+      openAuthDialog(route.fullPath)
       return
     }
 
@@ -164,7 +169,7 @@ export function useProductDetail() {
     }
     if (!isAuthenticated.value) {
       showToast('Masuk dulu untuk menambah ke keranjang')
-      router.push({ name: 'login', query: { redirect: route.fullPath } })
+      openAuthDialog(route.fullPath)
       return
     }
     addToCart(item)
@@ -173,7 +178,7 @@ export function useProductDetail() {
   async function toggleRelatedLike(item: CatalogProduct) {
     if (!isAuthenticated.value) {
       showToast('Masuk dulu untuk menyimpan produk favorit')
-      router.push({ name: 'login', query: { redirect: route.fullPath } })
+      openAuthDialog(route.fullPath)
       return
     }
 
@@ -210,6 +215,7 @@ export function useProductDetail() {
     subtotal,
     categoryVisual,
     productImage,
+    productImageRaw,
     productSeries,
     loadProduct,
     step,

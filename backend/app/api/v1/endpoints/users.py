@@ -3,11 +3,19 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi import status as http_status
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 
-from app.api.deps import AdminUser, DbSession
+from app.api.deps import AdminUser, CurrentUser, DbSession
+from app.core.security import hash_password, verify_password
 from app.models import Role, User
 from app.schemas.common import Page
-from app.schemas.user import UserOut, UserRolesUpdate, UserStatusUpdate
+from app.schemas.user import (
+    UserCreate,
+    UserOut,
+    UserProfileUpdate,
+    UserRolesUpdate,
+    UserStatusUpdate,
+)
 
 router = APIRouter(prefix="/users", tags=["users (admin)"])
 
@@ -53,6 +61,100 @@ def list_users(
         page=page,
         size=size,
     )
+
+
+@router.post(
+    "",
+    response_model=UserOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Buat user admin atau staff baru",
+)
+def create_user(
+    payload: UserCreate,
+    admin: AdminUser,
+    db: DbSession,
+) -> User:
+    email = payload.email.lower()
+    if payload.role not in MANAGED_ROLES:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"Role harus salah satu dari: {', '.join(MANAGED_ROLES)}",
+        )
+
+    if db.scalar(select(User.id).where(User.email == email)):
+        raise HTTPException(status.HTTP_409_CONFLICT, "Email sudah terdaftar")
+
+    role = db.scalar(select(Role).where(Role.name == payload.role))
+    if role is None:
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            f"Role '{payload.role}' tidak ditemukan di sistem",
+        )
+
+    new_user = User(
+        name=payload.name.strip(),
+        email=email,
+        password_hash=hash_password(payload.password),
+        is_active=True,
+    )
+    new_user.roles.append(role)
+    db.add(new_user)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, "Email sudah terdaftar") from exc
+
+    db.refresh(new_user)
+    return new_user
+
+
+@router.get("/me", response_model=UserOut, summary="Profil user yang sedang login")
+def get_my_profile(current_user: CurrentUser) -> User:
+    return current_user
+
+
+@router.patch("/me", response_model=UserOut, summary="Update profil user sendiri (nama & password)")
+def update_my_profile(
+    payload: UserProfileUpdate,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> User:
+    updated = False
+
+    if payload.name is not None:
+        clean_name = payload.name.strip()
+        if len(clean_name) < 2:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Nama minimal 2 karakter")
+        current_user.name = clean_name
+        updated = True
+
+    if payload.new_password is not None:
+        if not payload.current_password:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "Harap masukkan kata sandi saat ini untuk mengganti kata sandi",
+            )
+        if not verify_password(payload.current_password, current_user.password_hash):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "Kata sandi saat ini tidak cocok",
+            )
+        if len(payload.new_password) < 8:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "Kata sandi baru minimal 8 karakter",
+            )
+        current_user.password_hash = hash_password(payload.new_password)
+        updated = True
+
+    if not updated:
+        return current_user
+
+    db.add(current_user)
+    db.commit()
+    db.refresh(current_user)
+    return current_user
 
 
 @router.get("/{user_id}", response_model=UserOut, summary="Detail user (admin)")

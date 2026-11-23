@@ -16,6 +16,7 @@ import StoreShell from '@/components/StoreShell.vue'
 import ProductArt from '@/components/ProductArt.vue'
 import { useCart, FREE_SHIPPING_THRESHOLD } from '@/composables/useCart'
 import { useAuth } from '@/composables/useAuth'
+import { openAuthDialog } from '@/composables/useAuthDialog'
 import { useSeo } from '@/composables/useSeo'
 import { catalogApi } from '@/api/catalog'
 import { rupiah } from '@/lib/format'
@@ -100,7 +101,7 @@ function goCheckout() {
     return
   }
   if (!isAuthenticated.value) {
-    router.push({ name: 'login', query: { redirect: '/checkout' } })
+    openAuthDialog('/checkout')
     return
   }
   router.push('/checkout')

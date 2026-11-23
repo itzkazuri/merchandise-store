@@ -15,19 +15,40 @@ const isError = ref(false)
 
 const OP_SYMBOL: Record<Operator, string> = { add: '+', subtract: '−', multiply: '×', divide: '÷' }
 
+/* ---------- Kelas Tailwind (dipisah supaya template tetap rapi) ---------- */
+const keyBase =
+  'h-12 rounded-xl border-2 border-ink font-body text-base font-extrabold cursor-pointer select-none ' +
+  'shadow-[2px_2px_0_#1B2430] transition-[transform,box-shadow,background-color] duration-100 ' +
+  'active:translate-x-0.5 active:translate-y-0.5 active:shadow-none'
+
+const keyNum = `${keyBase} bg-white text-ink hover:bg-muted`
+const keySoft = `${keyBase} bg-soft text-ink hover:bg-pinky`
+const keyOp = `${keyBase} bg-sky text-ink hover:bg-[#bfe3f5]`
+const keyEq = `${keyBase} row-span-2 h-auto bg-ink text-bg text-xl hover:bg-[#34404d]`
+
+/* ---------- Tampilan ---------- */
 const pretty = computed(() => {
   if (isError.value) return 'Error'
   const [rawInt = '0', decPart] = display.value.split('.')
   const sign = rawInt.startsWith('-') ? '-' : ''
-  const digits = sign ? rawInt.slice(1) : (rawInt || '0')
+  const digits = sign ? rawInt.slice(1) : rawInt || '0'
   const grouped = digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
   return `${sign}${grouped}${decPart !== undefined ? `,${decPart}` : ''}`
+})
+
+// Angka besar otomatis mengecil supaya tidak terpotong
+const valueSize = computed(() => {
+  const len = pretty.value.length
+  if (len > 14) return 'text-2xl'
+  if (len > 10) return 'text-3xl'
+  return 'text-4xl'
 })
 
 function grouped(value: number) {
   return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(value)
 }
 
+/* ---------- Logika ---------- */
 function currentValue() {
   const parsed = Number(display.value)
   return Number.isFinite(parsed) ? parsed : 0
@@ -49,13 +70,14 @@ function clearAll() {
 function digit(value: string) {
   if (isError.value) clearAll()
   if (fresh.value) {
-    display.value = value === '.' ? '0.' : value
-    fresh.value = false
+    // "00" di awal angka tidak berarti apa-apa
+    display.value = value === '.' ? '0.' : value === '00' ? '0' : value
+    fresh.value = value === '00' || value === '0'
     return
   }
   if (value === '.' && display.value.includes('.')) return
   if (display.value.replace(/[-.]/g, '').length >= 12) return
-  display.value = display.value === '0' && value !== '.' ? value : `${display.value}${value}`
+  display.value = display.value === '0' && value !== '.' ? (value === '00' ? '0' : value) : `${display.value}${value}`
 }
 
 function backspace() {
@@ -77,15 +99,23 @@ function compute(left: number, right: number, operator: Operator) {
   }
 }
 
+function fail() {
+  isError.value = true
+  display.value = '0'
+  pending.value = null
+  accumulator.value = null
+  fresh.value = true
+}
+
 function chooseOperator(operator: Operator) {
   if (isError.value) return
   const value = currentValue()
   if (pending.value !== null && accumulator.value !== null && !fresh.value) {
     const result = compute(accumulator.value, value, pending.value)
-    if (!Number.isFinite(result)) { isError.value = true; pending.value = null; accumulator.value = null; fresh.value = true; return }
+    if (!Number.isFinite(result)) { fail(); return }
     accumulator.value = result
     display.value = String(result)
-  } else {
+  } else if (accumulator.value === null) {
     accumulator.value = value
   }
   pending.value = operator
@@ -98,14 +128,7 @@ function equals() {
   const right = currentValue()
   const result = compute(accumulator.value, right, pending.value)
   history.value = `${grouped(accumulator.value)} ${OP_SYMBOL[pending.value]} ${grouped(right)} =`
-  if (!Number.isFinite(result)) {
-    isError.value = true
-    display.value = '0'
-    pending.value = null
-    accumulator.value = null
-    fresh.value = true
-    return
-  }
+  if (!Number.isFinite(result)) { fail(); return }
   display.value = String(result)
   accumulator.value = null
   pending.value = null
@@ -137,145 +160,60 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
-  <section class="pos-calculator" aria-label="Kalkulator kasir">
-    <div class="pos-calculator__display" aria-live="polite">
-      <p class="pos-calculator__history">{{ history || 'Kalkulator' }}</p>
-      <p class="pos-calculator__value">{{ pretty }}</p>
+  <section class="nb overflow-hidden" aria-label="Kalkulator kasir">
+    <!-- Layar -->
+    <div class="border-b-[2.5px] border-ink bg-ink px-4 pt-3 pb-3.5 text-bg" aria-live="polite">
+      <p class="min-h-4 truncate text-right text-xs font-bold tabular-nums text-sky">
+        {{ history || 'Kalkulator' }}
+      </p>
+      <p
+        class="mt-0.5 break-all text-right font-head font-semibold leading-tight tabular-nums transition-[font-size] duration-100"
+        :class="[valueSize, isError ? 'text-pinky' : 'text-white']"
+      >
+        {{ pretty }}
+      </p>
     </div>
 
-    <div class="pos-calculator__keys">
-      <button type="button" class="calc-key calc-key--soft" @click="clearAll">C</button>
-      <button type="button" class="calc-key calc-key--soft" aria-label="Hapus satu digit" @click="backspace"><Delete :size="17" :stroke-width="2" /></button>
-      <button type="button" class="calc-key calc-key--op" aria-label="Bagi" @click="chooseOperator('divide')">÷</button>
-      <button type="button" class="calc-key calc-key--op" aria-label="Kali" @click="chooseOperator('multiply')">×</button>
+    <!-- Tombol -->
+    <div class="grid grid-cols-4 gap-2 bg-bg p-3">
+      <button type="button" :class="keySoft" aria-label="Hapus semua" @click="clearAll">C</button>
+      <button type="button" :class="keySoft" aria-label="Hapus satu digit" @click="backspace">
+        <Delete :size="18" class="mx-auto" />
+      </button>
+      <button type="button" :class="keyOp" aria-label="Bagi" @click="chooseOperator('divide')">÷</button>
+      <button type="button" :class="keyOp" aria-label="Kali" @click="chooseOperator('multiply')">×</button>
 
-      <button type="button" class="calc-key" @click="digit('7')">7</button>
-      <button type="button" class="calc-key" @click="digit('8')">8</button>
-      <button type="button" class="calc-key" @click="digit('9')">9</button>
-      <button type="button" class="calc-key calc-key--op" aria-label="Kurang" @click="chooseOperator('subtract')">−</button>
+      <button type="button" :class="keyNum" @click="digit('7')">7</button>
+      <button type="button" :class="keyNum" @click="digit('8')">8</button>
+      <button type="button" :class="keyNum" @click="digit('9')">9</button>
+      <button type="button" :class="keyOp" aria-label="Kurang" @click="chooseOperator('subtract')">−</button>
 
-      <button type="button" class="calc-key" @click="digit('4')">4</button>
-      <button type="button" class="calc-key" @click="digit('5')">5</button>
-      <button type="button" class="calc-key" @click="digit('6')">6</button>
-      <button type="button" class="calc-key calc-key--op" aria-label="Tambah" @click="chooseOperator('add')">+</button>
+      <button type="button" :class="keyNum" @click="digit('4')">4</button>
+      <button type="button" :class="keyNum" @click="digit('5')">5</button>
+      <button type="button" :class="keyNum" @click="digit('6')">6</button>
+      <button type="button" :class="keyOp" aria-label="Tambah" @click="chooseOperator('add')">+</button>
 
-      <button type="button" class="calc-key" @click="digit('1')">1</button>
-      <button type="button" class="calc-key" @click="digit('2')">2</button>
-      <button type="button" class="calc-key" @click="digit('3')">3</button>
-      <button type="button" class="calc-key calc-key--eq" aria-label="Sama dengan" @click="equals">=</button>
+      <button type="button" :class="keyNum" @click="digit('1')">1</button>
+      <button type="button" :class="keyNum" @click="digit('2')">2</button>
+      <button type="button" :class="keyNum" @click="digit('3')">3</button>
+      <button type="button" :class="keyEq" aria-label="Sama dengan" @click="equals">=</button>
 
-      <button type="button" class="calc-key" @click="digit('00')">00</button>
-      <button type="button" class="calc-key" @click="digit('0')">0</button>
-      <button type="button" class="calc-key" @click="digit('.')">,</button>
+      <button type="button" :class="keyNum" @click="digit('00')">00</button>
+      <button type="button" :class="keyNum" @click="digit('0')">0</button>
+      <button type="button" :class="keyNum" aria-label="Koma desimal" @click="digit('.')">,</button>
     </div>
 
-    <button type="button" class="pos-calculator__use" @click="useValue">
-      <Check :size="15" /> Pakai {{ pretty }}
-    </button>
+    <!-- Pakai nilai -->
+    <div class="border-t-[2.5px] border-ink bg-white p-3">
+      <button
+        type="button"
+        class="btn h-11 w-full gap-2 bg-sun font-head text-sm font-semibold text-ink hover:bg-[#f7c966] disabled:hover:bg-sun"
+        :disabled="isError"
+        @click="useValue"
+      >
+        <Check :size="16" />
+        Pakai {{ pretty }}
+      </button>
+    </div>
   </section>
 </template>
-
-<style scoped>
-.pos-calculator {
-  overflow: hidden;
-  border: 1px solid #e3ddcf;
-  border-radius: 10px;
-  background: #fff;
-  box-shadow: 0 1px 2px #1b24300a;
-}
-
-.pos-calculator__display {
-  padding: 11px 14px;
-  background: #1b2430;
-  color: #fff;
-}
-
-.pos-calculator__history {
-  min-height: 14px;
-  margin: 0;
-  overflow: hidden;
-  color: #b9c2cb;
-  font-size: 10.5px;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.pos-calculator__value {
-  margin: 2px 0 0;
-  overflow-wrap: anywhere;
-  font: 600 26px var(--font-head);
-  line-height: 1.15;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.pos-calculator__keys {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
-  padding: 8px;
-}
-
-.calc-key {
-  height: 42px;
-  border: 1px solid #e0dbcf;
-  border-radius: 8px;
-  background: #fbfaf6;
-  color: #1b2430;
-  font: 700 15px var(--font-body);
-  cursor: pointer;
-  transition: background 0.12s, transform 0.05s;
-}
-
-.calc-key:hover {
-  background: #f2eee4;
-}
-
-.calc-key:active {
-  transform: scale(0.97);
-}
-
-.calc-key--soft {
-  background: #f1ede4;
-  color: #5f6770;
-}
-
-.calc-key--op {
-  background: #fff2cf;
-  border-color: #e6cf95;
-  color: #6a4a06;
-}
-
-.calc-key--eq {
-  grid-row: span 2;
-  background: #1b2430;
-  border-color: #1b2430;
-  color: #fff;
-}
-
-.calc-key--eq:hover {
-  background: #34404d;
-}
-
-.pos-calculator__use {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: calc(100% - 16px);
-  height: 38px;
-  margin: 0 8px 8px;
-  border: 1px solid #d9a92c;
-  border-radius: 8px;
-  background: #f4c45a;
-  color: #3f2c00;
-  font: 700 12.5px var(--font-body);
-  cursor: pointer;
-}
-
-.pos-calculator__use:hover {
-  background: #f7d075;
-}
-</style>

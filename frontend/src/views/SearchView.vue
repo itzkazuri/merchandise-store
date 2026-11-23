@@ -4,10 +4,12 @@ import { useRoute, useRouter } from 'vue-router'
 import { Search, SearchX, RotateCcw, SlidersHorizontal } from 'lucide-vue-next'
 import StoreShell from '@/components/StoreShell.vue'
 import ProductCard from '@/components/ProductCard.vue'
+import AppSelect from '@/components/ui/AppSelect.vue'
 import { useSeo } from '@/composables/useSeo'
 import { useCart } from '@/composables/useCart'
 import { useToast } from '@/composables/useToast'
 import { useAuth } from '@/composables/useAuth'
+import { openAuthDialog } from '@/composables/useAuthDialog'
 import { catalogApi } from '@/api/catalog'
 import { decorateProduct } from '@/lib/productVisual'
 import type { CatalogProduct, Category } from '@/types/catalog'
@@ -30,6 +32,18 @@ const total = ref(0)
 const hasNext = ref(false)
 const loadingMore = ref(false)
 const error = ref('')
+
+const categoryOptions = computed(() => [
+  { value: '', label: 'Semua kategori' },
+  ...categories.value.map((category) => ({ value: category.slug, label: category.name })),
+])
+
+const SORT_OPTIONS = [
+  { value: 'newest', label: 'Terbaru' },
+  { value: 'price_asc', label: 'Harga: Murah dulu' },
+  { value: 'price_desc', label: 'Harga: Mahal dulu' },
+  { value: 'best_seller', label: 'Terlaris' },
+]
 
 const PAGE_SIZE = 20
 
@@ -81,7 +95,7 @@ function syncQuery() {
 function handleAdd(product: CatalogProduct) {
   if (!isAuthenticated.value) {
     showToast('Masuk dulu untuk menambah ke keranjang')
-    router.push({ name: 'login', query: { redirect: route.fullPath } })
+    openAuthDialog(route.fullPath)
     return
   }
   if (Number(product.stock ?? 0) <= 0) { showToast(`${product.name} sedang habis`); return }
@@ -148,26 +162,22 @@ onMounted(async () => {
         </span>
 
         <!-- Category -->
-        <select
+        <AppSelect
           v-model="selectedCategory"
-          class="h-8 rounded-full border-2 border-ink bg-white px-3 text-xs font-semibold focus:outline-none focus:border-sun cursor-pointer"
-        >
-          <option value="">Semua kategori</option>
-          <option v-for="cat in categories" :key="cat.slug" :value="cat.slug">
-            {{ cat.name }}
-          </option>
-        </select>
+          :options="categoryOptions"
+          aria-label="Kategori"
+          size="sm"
+          class="max-w-[190px]"
+        />
 
         <!-- Sort -->
-        <select
+        <AppSelect
           v-model="sortOption"
-          class="h-8 rounded-full border-2 border-ink bg-white px-3 text-xs font-semibold focus:outline-none focus:border-sun cursor-pointer"
-        >
-          <option value="newest">Terbaru</option>
-          <option value="price_asc">Harga: Murah dulu</option>
-          <option value="price_desc">Harga: Mahal dulu</option>
-          <option value="best_seller">Terlaris</option>
-        </select>
+          :options="SORT_OPTIONS"
+          aria-label="Urutkan"
+          size="sm"
+          class="max-w-[170px]"
+        />
 
         <button
           v-if="q || selectedCategory || sortOption !== 'newest'"

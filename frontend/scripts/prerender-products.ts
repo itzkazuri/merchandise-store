@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 interface ProductImage {
   object_key: string
+  url?: string | null
   alt_text?: string | null
   is_primary?: boolean
   sort_order?: number
@@ -45,11 +46,11 @@ function absoluteImage(product: CatalogProduct): string | null {
     if (a.is_primary !== b.is_primary) return a.is_primary ? -1 : 1
     return (a.sort_order || 0) - (b.sort_order || 0)
   })[0]
-  const key = image?.object_key?.trim()
-  if (!key) return null
-  if (/^https?:\/\//i.test(key)) return key
+  const stored = image?.url?.trim() || image?.object_key?.trim()
+  if (!stored) return null
+  if (/^https?:\/\//i.test(stored)) return stored
   if (!mediaBase) return null
-  return `${mediaBase}/${key.replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/')}`
+  return `${mediaBase}/${stored.replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/')}`
 }
 
 function optimizedImage(url: string, width: number): string {
@@ -70,7 +71,7 @@ function asJsonLd(value: unknown): string {
   return JSON.stringify(value).replace(/</g, '\\u003c')
 }
 
-function renderedHead(template: string, product: CatalogProduct, canonical: string, image: string | null, imageSrcSet?: string): string {
+function renderedHead(template: string, product: CatalogProduct, canonical: string, image: string | null, displayImage: string | null, imageSrcSet?: string): string {
   const title = `${product.name} · Mochibako`
   const description = product.description?.trim()
     || `Beli ${product.name} di Mochibako. Lihat harga dan ketersediaan produk.`
@@ -114,7 +115,7 @@ function renderedHead(template: string, product: CatalogProduct, canonical: stri
     .replace(/<title>[\s\S]*?<\/title>/i, `<title>${escapeHtml(title)}</title>`)
     .replace(/<meta\s+name="description"[^>]*>/i, '')
     .replace('</head>', `    ${tags}\n  </head>`)
-    .replace('<div id="app"></div>', `<div id="app"><main><h1>${escapeHtml(product.name)}</h1>${image ? `<img src="${escapeHtml(image)}"${imageSrcSet ? ` srcset="${escapeHtml(imageSrcSet)}" sizes="(max-width: 1024px) 92vw, 560px"` : ''} alt="${escapeHtml(product.images?.find((item) => item.is_primary)?.alt_text || product.name)}" width="960" height="960" fetchpriority="high">` : ''}<p>${escapeHtml(description)}</p><p>Harga: Rp${new Intl.NumberFormat('id-ID').format(Number(product.price))}</p><p>${Number(product.stock) > 0 ? 'Tersedia' : 'Stok habis'}</p><a href="/">Lihat produk lainnya di Mochibako</a></main></div>`)
+    .replace('<div id="app"></div>', `<div id="app"><main><h1>${escapeHtml(product.name)}</h1>${displayImage ? `<img src="${escapeHtml(displayImage)}"${imageSrcSet ? ` srcset="${escapeHtml(imageSrcSet)}" sizes="(max-width: 1024px) 92vw, 560px"` : ''} alt="${escapeHtml(product.images?.find((item) => item.is_primary)?.alt_text || product.name)}" width="960" height="960" fetchpriority="high">` : ''}<p>${escapeHtml(description)}</p><p>Harga: Rp${new Intl.NumberFormat('id-ID').format(Number(product.price))}</p><p>${Number(product.stock) > 0 ? 'Tersedia' : 'Stok habis'}</p><a href="/">Lihat produk lainnya di Mochibako</a></main></div>`)
 }
 
 function xmlEscape(value: string): string {
@@ -165,16 +166,19 @@ async function main() {
       const path = `/produk/${slug}`
       const canonical = `${siteUrl}${path}`
       const sourceImage = absoluteImage(product)
-      const image = sourceImage ? optimizedImage(sourceImage, 960) : null
+      const displayImage = sourceImage ? optimizedImage(sourceImage, 960) : null
       const imageSrcSet = sourceImage
         ? [320, 640, 960].map((width) => `${optimizedImage(sourceImage, width)} ${width}w`).join(', ')
         : undefined
       const pageDir = join(outDir, 'produk', slug)
       await mkdir(pageDir, { recursive: true })
-      await writeFile(join(pageDir, 'index.html'), renderedHead(template, product, canonical, image, imageSrcSet))
+      await writeFile(
+        join(pageDir, 'index.html'),
+        renderedHead(template, product, canonical, sourceImage, displayImage, imageSrcSet),
+      )
       const lastmod = product.updated_at ? `\n    <lastmod>${xmlEscape(product.updated_at.slice(0, 10))}</lastmod>` : ''
-      const imageEntry = image
-        ? `\n    <image:image><image:loc>${xmlEscape(image)}</image:loc><image:title>${xmlEscape(product.name)}</image:title></image:image>`
+      const imageEntry = sourceImage
+        ? `\n    <image:image><image:loc>${xmlEscape(sourceImage)}</image:loc><image:title>${xmlEscape(product.name)}</image:title></image:image>`
         : ''
       sitemapEntries.push(`  <url><loc>${xmlEscape(canonical)}</loc>${lastmod}${imageEntry}\n  </url>`)
       rendered += 1

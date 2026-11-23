@@ -1,4 +1,4 @@
-import { getStoredTokens, replaceStoredTokens, clearStoredTokens } from './session'
+import { clearStoredTokens } from './session'
 
 export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace(/\/$/, '')
 
@@ -14,16 +14,11 @@ let refreshPromise: Promise<boolean> | null = null
 async function refreshAccessToken(): Promise<boolean> {
   if (refreshPromise) return refreshPromise
   refreshPromise = (async () => {
-    const tokens = getStoredTokens()
-    if (!tokens?.refresh_token) return false
     try {
       const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh_token: tokens.refresh_token }),
+        method: 'POST', credentials: 'include',
       })
       if (!response.ok) { clearStoredTokens(); return false }
-      const next = await response.json()
-      replaceStoredTokens(next)
       return true
     } catch { return false }
   })().finally(() => { refreshPromise = null })
@@ -40,16 +35,12 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   const { auth = true, retryAuth = true, headers: initialHeaders, body, ...init } = options
   const headers = new Headers(initialHeaders)
   if (body !== undefined && !(body instanceof FormData)) headers.set('Content-Type', 'application/json')
-  const tokens = getStoredTokens()
-  if (auth && tokens?.access_token) headers.set('Authorization', `Bearer ${tokens.access_token}`)
   let response = await fetch(`${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`, {
-    ...init, headers, body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),
+    ...init, credentials: 'include', headers, body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),
   })
   if (response.status === 401 && auth && retryAuth && await refreshAccessToken()) {
-    const refreshed = getStoredTokens()
-    if (refreshed?.access_token) headers.set('Authorization', `Bearer ${refreshed.access_token}`)
     response = await fetch(`${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`, {
-      ...init, headers, body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),
+      ...init, credentials: 'include', headers, body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),
     })
   }
   if (!response.ok) {

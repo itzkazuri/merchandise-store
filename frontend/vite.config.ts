@@ -3,10 +3,29 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vueDevTools from 'vite-plugin-vue-devtools'
 import tailwindcss from '@tailwindcss/vite'
-import { imageOptimizerPlugin } from './scripts/vite-plugin-image-optimizer'
+import { imageOptimizerPlugin } from './scripts/vite-plugin-image-optimizer.ts'
+
+const apiOrigin = new URL(process.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').origin
+const mediaOrigin = new URL(
+  process.env.VITE_STORAGE_ORIGIN || process.env.VITE_MEDIA_BASE_URL || 'http://127.0.0.1:9000',
+).origin
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'none'",
+  "form-action 'self'",
+  "script-src 'self' https://accounts.google.com",
+  "style-src 'self' 'unsafe-inline'",
+  `img-src 'self' data: https: ${mediaOrigin} http://localhost:9000`,
+  `connect-src 'self' ${apiOrigin} https://accounts.google.com https://oauth2.googleapis.com ws://localhost:5173 ws://127.0.0.1:5173`,
+  "frame-src https://accounts.google.com",
+].join('; ')
 
 // https://vite.dev/config/
 export default defineConfig(({ isSsrBuild }) => ({
+  server: { headers: { 'Content-Security-Policy': contentSecurityPolicy } },
+  preview: { headers: { 'Content-Security-Policy': contentSecurityPolicy } },
   plugins: [
     vue(),
     vueDevTools(),

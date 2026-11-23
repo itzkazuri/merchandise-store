@@ -13,6 +13,20 @@ import { hasAnyRole, useAuth } from '@/composables/useAuth'
 type Kind = 'anime' | 'product'
 interface CategoryForm { name: string; slug: string; description: string; is_active: boolean; sort_order: number }
 
+/* ---------- Kelas Tailwind yang dipakai berulang ---------- */
+const inputCls =
+  'h-10 w-full min-w-0 rounded-xl border-2 border-ink bg-white px-3 font-body text-sm text-ink ' +
+  'placeholder:text-muted-foreground focus:bg-[#fffaf0]'
+const tabBase =
+  'grid cursor-pointer grid-cols-[auto_auto] items-center justify-start gap-x-2 gap-y-px rounded-xl border-2 border-ink px-3 py-2.5 text-left text-ink ' +
+  'shadow-[2px_2px_0_#1B2430] transition-[transform,box-shadow,background-color] duration-100 ' +
+  'active:translate-x-0.5 active:translate-y-0.5 active:shadow-none'
+const actionBase =
+  'inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-xl border-2 border-ink bg-white px-2.5 font-body text-xs font-extrabold ' +
+  'shadow-[2px_2px_0_#1B2430] transition-[transform,box-shadow,background-color] duration-100 ' +
+  'active:translate-x-0.5 active:translate-y-0.5 active:shadow-none disabled:cursor-not-allowed disabled:opacity-50'
+const pillBase = 'whitespace-nowrap rounded-full border-[1.5px] border-ink px-2 text-[11px] font-bold leading-5 text-ink'
+
 const { user } = useAuth()
 const canDelete = computed(() => hasAnyRole(user.value, ['admin']))
 const items = ref<Category[]>([])
@@ -117,57 +131,69 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="admin-categories-page">
+  <div>
     <AdminPageHeader title="Kategori" description="Kelola seri anime dan jenis produk yang dipakai untuk mengelompokkan katalog.">
       <AdminButton variant="primary" @click="openCreate"><Plus :size="16" /> Tambah {{ activeTab.label.toLowerCase() }}</AdminButton>
     </AdminPageHeader>
 
-    <div v-if="error" class="admin-categories-alert" role="alert">{{ error }}</div>
-    <div v-else-if="notice" class="admin-categories-alert admin-categories-alert--ok" role="status">{{ notice }}</div>
+    <div v-if="error" class="mb-3.5 rounded-xl border-2 border-ink bg-pinky px-3 py-2.5 text-sm font-bold text-ink" role="alert">{{ error }}</div>
+    <div v-else-if="notice" class="mb-3.5 rounded-xl border-2 border-ink bg-mint px-3 py-2.5 text-sm font-bold text-ink" role="status">{{ notice }}</div>
 
-    <section class="admin-panel admin-categories-panel" aria-label="Daftar kategori">
-      <div class="admin-category-tabs" role="tablist" aria-label="Jenis kategori">
+    <section class="admin-panel overflow-hidden" aria-label="Daftar kategori">
+      <!-- Tab -->
+      <div class="grid gap-2.5 border-b-2 border-ink/10 bg-bg px-4 py-3.5 sm:grid-cols-2" role="tablist" aria-label="Jenis kategori">
         <button
           v-for="tab in tabs"
           :key="tab.kind"
           type="button"
           role="tab"
-          class="admin-category-tab"
-          :class="{ 'is-active': activeKind === tab.kind }"
+          :class="[tabBase, activeKind === tab.kind ? 'bg-banner-sun' : 'bg-white hover:bg-muted']"
           :aria-selected="activeKind === tab.kind"
           @click="activeKind = tab.kind"
         >
-          <strong>{{ tab.label }}</strong>
-          <span>{{ tab.kind === 'anime' ? animeCount : productCount }}</span>
-          <small>{{ tab.hint }}</small>
+          <strong class="font-body text-sm font-extrabold">{{ tab.label }}</strong>
+          <span
+            class="grid h-5 min-w-5 place-items-center rounded-full px-1.5 text-[11px] font-extrabold"
+            :class="activeKind === tab.kind ? 'bg-ink text-white' : 'bg-soft text-ink'"
+          >{{ tab.kind === 'anime' ? animeCount : productCount }}</span>
+          <small class="col-span-full text-[11px] text-muted-foreground">{{ tab.hint }}</small>
         </button>
       </div>
 
       <AdminState v-if="loading" kind="loading" message="Memuat kategori…" />
-      <div v-else-if="!visible.length" class="admin-categories-empty">
+
+      <div v-else-if="!visible.length" class="grid justify-items-center gap-2 px-5 py-10 text-center text-muted-foreground">
         <Tags :size="22" />
-        <strong>Belum ada {{ activeTab.label.toLowerCase() }}</strong>
-        <span>Tambahkan kategori agar produk bisa difilter dengan rapi.</span>
-        <AdminButton variant="secondary" @click="openCreate"><Plus :size="15" /> Tambah {{ activeTab.label.toLowerCase() }}</AdminButton>
+        <strong class="font-head text-[15px] font-semibold text-ink">Belum ada {{ activeTab.label.toLowerCase() }}</strong>
+        <span class="max-w-[34ch] text-sm leading-relaxed">Tambahkan kategori agar produk bisa difilter dengan rapi.</span>
+        <AdminButton variant="secondary" class="mt-1!" @click="openCreate"><Plus :size="15" /> Tambah {{ activeTab.label.toLowerCase() }}</AdminButton>
       </div>
 
-      <ul v-else class="admin-category-list">
-        <li v-for="item in visible" :key="item.id" class="admin-category-row" :class="{ 'is-inactive': !item.is_active }">
-          <div class="admin-category-row__main">
-            <strong>{{ item.name }}</strong>
-            <code>{{ item.slug }}</code>
-            <p v-if="item.description">{{ item.description }}</p>
+      <!-- Daftar -->
+      <ul v-else class="m-0 list-none p-0">
+        <li
+          v-for="item in visible"
+          :key="item.id"
+          class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b-2 border-ink/10 px-4 py-3 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:gap-3"
+          :class="item.is_active ? '' : 'bg-bg'"
+        >
+          <div class="grid min-w-0 gap-0.5">
+            <strong class="font-body text-sm font-bold">{{ item.name }}</strong>
+            <code class="truncate font-mono text-[11px] text-muted-foreground">{{ item.slug }}</code>
+            <p v-if="item.description" class="m-0 mt-0.5 text-xs leading-normal text-muted-foreground">{{ item.description }}</p>
           </div>
-          <div class="admin-category-row__meta">
-            <span class="admin-category-count">{{ item.product_count || 0 }} produk</span>
-            <span class="admin-category-status" :data-active="item.is_active">{{ item.is_active ? 'Aktif' : 'Nonaktif' }}</span>
+
+          <div class="flex items-center gap-2 max-sm:justify-end">
+            <span :class="[pillBase, 'bg-banner-sky']">{{ item.product_count || 0 }} produk</span>
+            <span :class="[pillBase, item.is_active ? 'bg-mint' : 'bg-soft']">{{ item.is_active ? 'Aktif' : 'Nonaktif' }}</span>
           </div>
-          <div class="admin-category-row__actions">
-            <button type="button" class="admin-category-action" @click="openEdit(item)"><Pencil :size="14" /> Edit</button>
+
+          <div class="flex gap-1.5 max-sm:col-span-full max-sm:justify-end">
+            <button type="button" :class="[actionBase, 'hover:bg-banner-sun']" @click="openEdit(item)"><Pencil :size="14" /> Edit</button>
             <button
               v-if="canDelete"
               type="button"
-              class="admin-category-action admin-category-action--danger"
+              :class="[actionBase, 'text-destructive enabled:hover:bg-pinky']"
               :disabled="busyId === item.id"
               @click="remove(item)"
             >
@@ -178,31 +204,32 @@ onMounted(load)
       </ul>
     </section>
 
+    <!-- Dialog form -->
     <AdminDialog
       v-model="dialogOpen"
       :title="editing ? 'Edit kategori' : `Tambah ${activeTab.label.toLowerCase()}`"
       :description="editing ? 'Perubahan langsung dipakai pada filter katalog.' : `Kategori baru akan masuk ke kelompok ${activeTab.label.toLowerCase()}.`"
     >
-      <form id="admin-category-form" class="admin-category-form" @submit.prevent="submit">
+      <form id="admin-category-form" class="grid gap-3.5" @submit.prevent="submit">
         <label class="admin-field">
-          <span>Nama <b aria-hidden="true">*</b></span>
-          <input v-model="form.name" name="name" required maxlength="120" autocomplete="off" :placeholder="activeKind === 'anime' ? 'Contoh: Jujutsu Kaisen' : 'Contoh: Gantungan kunci'" />
+          <span class="admin-field__label">Nama <b class="text-destructive" aria-hidden="true">*</b></span>
+          <input v-model="form.name" name="name" required maxlength="120" autocomplete="off" :placeholder="activeKind === 'anime' ? 'Contoh: Jujutsu Kaisen' : 'Contoh: Gantungan kunci'" :class="inputCls" />
         </label>
         <label class="admin-field">
-          <span>Slug <small>opsional</small></span>
-          <input v-model="form.slug" name="slug" maxlength="140" autocomplete="off" placeholder="dibuat-otomatis-dari-nama" />
+          <span class="admin-field__label">Slug <small class="font-medium text-muted-foreground">opsional</small></span>
+          <input v-model="form.slug" name="slug" maxlength="140" autocomplete="off" placeholder="dibuat-otomatis-dari-nama" :class="inputCls" />
           <small class="admin-field__hint">Dipakai di URL filter, misalnya ?anime=jujutsu-kaisen.</small>
         </label>
         <label class="admin-field">
-          <span>Deskripsi <small>opsional</small></span>
-          <input v-model="form.description" name="description" maxlength="255" autocomplete="off" placeholder="Catatan singkat kategori" />
+          <span class="admin-field__label">Deskripsi <small class="font-medium text-muted-foreground">opsional</small></span>
+          <input v-model="form.description" name="description" maxlength="255" autocomplete="off" placeholder="Catatan singkat kategori" :class="inputCls" />
         </label>
         <label class="admin-field">
-          <span>Urutan tampil</span>
-          <input v-model.number="form.sort_order" name="sort_order" type="number" min="0" step="1" inputmode="numeric" />
+          <span class="admin-field__label">Urutan tampil</span>
+          <input v-model.number="form.sort_order" name="sort_order" type="number" min="0" step="1" inputmode="numeric" :class="inputCls" />
         </label>
-        <label class="admin-category-active">
-          <input v-model="form.is_active" type="checkbox" />
+        <label class="flex cursor-pointer items-center gap-2 text-sm font-semibold text-ink">
+          <input v-model="form.is_active" type="checkbox" class="accent-ink" />
           <span>Tampilkan di filter toko</span>
         </label>
         <AdminState v-if="formError" kind="error" :message="formError" />
@@ -214,324 +241,3 @@ onMounted(load)
     </AdminDialog>
   </div>
 </template>
-
-<style scoped>
-.admin-categories-panel {
-  overflow: hidden;
-}
-
-.admin-categories-alert {
-  margin-bottom: 14px;
-  padding: 10px 13px;
-  border: 1px solid #e4c3bc;
-  border-radius: 8px;
-  background: #fbefec;
-  color: #8a453a;
-  font-size: 12.5px;
-  font-weight: 600;
-}
-
-.admin-categories-alert--ok {
-  border-color: #c6ddc9;
-  background: #eef5ef;
-  color: #2f5b38;
-}
-
-/* ---------- Tab ---------- */
-.admin-category-tabs {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  padding: 13px 16px;
-  border-bottom: 1px solid #e8e5dd;
-  background: #fdfcf8;
-}
-
-.admin-category-tab {
-  display: grid;
-  grid-template-columns: auto auto;
-  align-items: center;
-  justify-content: start;
-  column-gap: 8px;
-  row-gap: 1px;
-  padding: 9px 12px;
-  border: 1px solid #ddd9ce;
-  border-radius: 9px;
-  background: #fff;
-  color: #4e5863;
-  text-align: left;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
-}
-
-.admin-category-tab strong {
-  font: 700 13px var(--font-body);
-}
-
-.admin-category-tab span {
-  display: grid;
-  place-items: center;
-  min-width: 20px;
-  height: 19px;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: #efece4;
-  color: #5f6770;
-  font-size: 10.5px;
-  font-weight: 800;
-}
-
-.admin-category-tab small {
-  grid-column: 1 / -1;
-  color: #828a93;
-  font-size: 10.5px;
-}
-
-.admin-category-tab:hover {
-  border-color: #d3c19a;
-}
-
-.admin-category-tab.is-active {
-  border-color: #d9b04a;
-  background: #fff8e4;
-  box-shadow: inset 0 0 0 1px #f0d692;
-}
-
-.admin-category-tab.is-active strong {
-  color: #5d4200;
-}
-
-.admin-category-tab.is-active span {
-  background: #1b2430;
-  color: #fff;
-}
-
-/* ---------- Daftar ---------- */
-.admin-category-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.admin-category-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 12px;
-  align-items: center;
-  padding: 12px 16px;
-  border-bottom: 1px solid #eeeae0;
-}
-
-.admin-category-row:last-child {
-  border-bottom: 0;
-}
-
-.admin-category-row.is-inactive {
-  background: #fbfaf6;
-}
-
-.admin-category-row__main {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.admin-category-row__main strong {
-  font: 700 13.5px var(--font-body);
-}
-
-.admin-category-row__main code {
-  overflow: hidden;
-  color: #828a93;
-  font: 500 11px ui-monospace, SFMono-Regular, Menlo, monospace;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.admin-category-row__main p {
-  margin: 2px 0 0;
-  color: #68717b;
-  font-size: 11.5px;
-  line-height: 1.5;
-}
-
-.admin-category-row__meta {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.admin-category-count {
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: #f3efe5;
-  color: #6d6450;
-  font-size: 10.5px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.admin-category-status {
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: #eef5ef;
-  color: #2f5b38;
-  font-size: 10.5px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.admin-category-status[data-active='false'] {
-  background: #f2eee8;
-  color: #7b7368;
-}
-
-.admin-category-row__actions {
-  display: flex;
-  gap: 6px;
-}
-
-.admin-category-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 32px;
-  padding: 0 10px;
-  border: 1px solid #ddd9ce;
-  border-radius: 7px;
-  background: #fff;
-  color: #3f4852;
-  font: 700 11.5px var(--font-body);
-  cursor: pointer;
-}
-
-.admin-category-action:hover {
-  background: #f6f3ea;
-}
-
-.admin-category-action--danger {
-  border-color: #e3d9d5;
-  color: #8b5449;
-}
-
-.admin-category-action--danger:hover {
-  background: #fbf1ee;
-}
-
-.admin-category-action:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.admin-categories-empty {
-  display: grid;
-  justify-items: center;
-  gap: 7px;
-  padding: 40px 20px;
-  color: #68717b;
-  text-align: center;
-}
-
-.admin-categories-empty strong {
-  color: #1b2430;
-  font: 600 15px var(--font-head);
-}
-
-.admin-categories-empty span {
-  max-width: 34ch;
-  font-size: 12.5px;
-  line-height: 1.55;
-}
-
-/* ---------- Form ---------- */
-.admin-category-form {
-  display: grid;
-  gap: 14px;
-}
-
-.admin-field {
-  display: grid;
-  align-content: start;
-  gap: 6px;
-  min-width: 0;
-  color: #3f4954;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.admin-field > span {
-  display: flex;
-  align-items: baseline;
-  gap: 5px;
-  min-height: 15px;
-}
-
-.admin-field > span b {
-  color: #a33b2b;
-}
-
-.admin-field > span small {
-  color: #828a93;
-  font-size: 11px;
-  font-weight: 500;
-}
-
-.admin-field input:not([type='checkbox']) {
-  width: 100%;
-  height: 40px;
-  min-width: 0;
-  padding: 0 10px;
-  border: 1px solid #d8d4ca;
-  border-radius: 7px;
-  background: #fff;
-  color: #1b2430;
-  font: 400 13px var(--font-body);
-}
-
-.admin-field input:focus-visible {
-  outline: none;
-  border-color: #d9b04a;
-  box-shadow: 0 0 0 3px #f6e6b3;
-}
-
-.admin-field__hint {
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 1.4;
-  color: #828a93;
-}
-
-.admin-category-active {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: #505963;
-  cursor: pointer;
-}
-
-.admin-category-active input {
-  accent-color: #9b6d00;
-}
-
-@media (max-width: 720px) {
-  .admin-category-tabs {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .admin-category-row {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 8px;
-  }
-
-  .admin-category-row__meta {
-    justify-content: flex-end;
-  }
-
-  .admin-category-row__actions {
-    grid-column: 1 / -1;
-    justify-content: flex-end;
-  }
-}
-</style>

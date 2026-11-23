@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
@@ -58,12 +58,14 @@ def _resolve_user(token: str, db: Session, expected: TokenType = TokenType.ACCES
 
 
 def get_current_user(
+    request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
     db: DbSession,
 ) -> User:
-    if credentials is None or not credentials.credentials:
+    token = credentials.credentials if credentials and credentials.credentials else request.cookies.get("merch_access")
+    if not token:
         raise _unauthorized("Token akses tidak dikirim")
-    return _resolve_user(credentials.credentials, db)
+    return _resolve_user(token, db)
 
 
 def get_current_active_user(user: Annotated[User, Depends(get_current_user)]) -> User:
@@ -76,14 +78,16 @@ def get_current_active_user(user: Annotated[User, Depends(get_current_user)]) ->
 
 
 def get_optional_user(
+    request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
     db: DbSession,
 ) -> User | None:
     """Untuk endpoint publik: token invalid dianggap sebagai tamu."""
-    if credentials is None or not credentials.credentials:
+    token = credentials.credentials if credentials and credentials.credentials else request.cookies.get("merch_access")
+    if not token:
         return None
     try:
-        user = _resolve_user(credentials.credentials, db)
+        user = _resolve_user(token, db)
     except HTTPException:
         return None
     return user if user.is_active else None

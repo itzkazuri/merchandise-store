@@ -1,6 +1,5 @@
 import { computed, ref } from 'vue'
 import { authApi } from '@/api/auth'
-import { apiRequest } from '@/api/client'
 
 export interface AuthUser {
   id: number
@@ -13,79 +12,27 @@ export interface AuthUser {
   avatar_url?: string | null
 }
 
-export interface TokenData {
-  access_token: string
-  refresh_token: string
-  token_type: string
-}
-
 const STORAGE_KEY = import.meta.env.VITE_TOKEN_STORAGE_KEY || 'merch.auth'
 export const GOOGLE_LOGIN_URL = authApi.googleLoginUrl
-export const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
 
 const user = ref<AuthUser | null>(null)
 const accessToken = ref<string | null>(null)
-const refreshToken = ref<string | null>(null)
 const loading = ref(false)
 const error = ref('')
+let profileRequest: Promise<AuthUser | null> | null = null
 
-// Initialize from storage or URL
+// Initialize from the HttpOnly session cookie.
 export function initAuth() {
   if (typeof window !== 'undefined') {
-    const params = new URLSearchParams(window.location.search)
-    const tokenFromUrl = params.get('access_token')
-    const refreshFromUrl = params.get('refresh_token')
-
-    if (tokenFromUrl) {
-      accessToken.value = tokenFromUrl
-      refreshToken.value = refreshFromUrl || null
-      saveTokens(tokenFromUrl, refreshFromUrl || '')
-
-      // Clean URL without reloading
-      const url = new URL(window.location.href)
-      url.searchParams.delete('access_token')
-      url.searchParams.delete('refresh_token')
-      window.history.replaceState({}, document.title, url.pathname + url.search)
-
-      fetchProfile()
-      return
-    }
-
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY)
-      if (stored) {
-        const parsed = JSON.parse(stored)
-        accessToken.value = parsed.access_token || null
-        refreshToken.value = parsed.refresh_token || null
-        if (parsed.user) {
-          user.value = parsed.user
-        }
-        if (accessToken.value) {
-          fetchProfile()
-        }
-      }
-    } catch {
-      // ignore
-    }
-  }
-}
-
-function saveTokens(access: string, refresh: string, userData?: AuthUser) {
-  try {
-    const payload = {
-      access_token: access,
-      refresh_token: refresh,
-      user: userData || user.value,
-    }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
-  } catch {
-    // ignore
+    // Purge tokens written by older localStorage-based releases.
+    try { localStorage.removeItem(STORAGE_KEY) } catch { /* storage unavailable */ }
+    accessToken.value = 'cookie'
+    fetchProfile()
   }
 }
 
 function clearTokens() {
   accessToken.value = null
-  refreshToken.value = null
   user.value = null
   try {
     localStorage.removeItem(STORAGE_KEY)
@@ -115,15 +62,26 @@ export function hasAnyRole(profile: AuthUser | null, required: string[]) {
 
 async function fetchProfile(): Promise<AuthUser | null> {
   if (!accessToken.value) return null
-  try {
-    const data = normalizeUser(await apiRequest<unknown>('/auth/me'))
-    user.value = data
-    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')
-    accessToken.value = stored.access_token || accessToken.value
-    refreshToken.value = stored.refresh_token || refreshToken.value
-    saveTokens(accessToken.value || '', refreshToken.value || '', data)
-    return data
-  } catch { return null }
+  if (profileRequest) return profileRequest
+  profileRequest = (async () => {
+    try {
+      const session = await authApi.loadSession()
+      if (!session) {
+        accessToken.value = null
+        user.value = null
+        return null
+      }
+      const data = normalizeUser(session)
+      user.value = data
+      accessToken.value = 'cookie'
+      return data
+    } catch {
+      accessToken.value = null
+      user.value = null
+      return null
+    }
+  })().finally(() => { profileRequest = null })
+  return profileRequest
 }
 
 export function useAuth() {
@@ -134,10 +92,8 @@ export function useAuth() {
     error.value = ''
 
     try {
-      const tokens: TokenData = await authApi.login({ email: email.trim(), password: pass })
-      accessToken.value = tokens.access_token
-      refreshToken.value = tokens.refresh_token
-      saveTokens(tokens.access_token, tokens.refresh_token)
+      await authApi.login({ email: email.trim(), password: pass })
+      accessToken.value = 'cookie'
       const profile = await fetchProfile()
       if (!profile) {
         clearTokens()
@@ -147,6 +103,27 @@ export function useAuth() {
       return true
     } catch (err: any) {
       error.value = err.message || 'Gagal masuk akun'
+      loading.value = false
+      return false
+    }
+  }
+
+  async function adminLogin(email: string, pass: string): Promise<boolean> {
+    loading.value = true
+    error.value = ''
+
+    try {
+      await authApi.adminLogin({ email: email.trim(), password: pass })
+      accessToken.value = 'cookie'
+      const profile = await fetchProfile()
+      if (!profile) {
+        clearTokens()
+        throw new Error('Login berhasil, namun profil akun gagal dimuat. Coba lagi.')
+      }
+      loading.value = false
+      return true
+    } catch (err: any) {
+      error.value = err.message || 'Gagal masuk akun administrator'
       loading.value = false
       return false
     }
@@ -170,7 +147,7 @@ export function useAuth() {
     }
   }
 
-  function quickGoogleLogin(): boolean {
+  function startGoogleLogin(): boolean {
     window.location.assign(GOOGLE_LOGIN_URL)
     return true
   }
@@ -189,9 +166,10 @@ export function useAuth() {
     loading,
     error,
     login,
+    adminLogin,
     register,
     logout,
     fetchProfile,
-    quickGoogleLogin,
+    startGoogleLogin,
   }
 }

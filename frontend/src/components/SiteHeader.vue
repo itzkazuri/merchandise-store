@@ -4,6 +4,7 @@ import { RouterLink, useRouter } from 'vue-router'
 import { Box, Search, ShoppingBag, User as UserIcon, LogOut, Package, LayoutDashboard, ArrowRight, Loader2 } from 'lucide-vue-next'
 import { useCart } from '@/composables/useCart'
 import { hasAnyRole, useAuth } from '@/composables/useAuth'
+import { openAuthDialog } from '@/composables/useAuthDialog'
 import { catalogApi } from '@/api/catalog'
 import { decorateProduct, productImageUrl, visualFor } from '@/lib/productVisual'
 import { rupiah } from '@/lib/format'
@@ -31,7 +32,7 @@ const { user, isAuthenticated, logout } = useAuth()
 
 function handleCartClick() {
   if (!isAuthenticated.value) {
-    router.push({ name: 'login', query: { redirect: '/keranjang' } })
+    openAuthDialog('/keranjang')
     return
   }
   toggleCart()
@@ -414,15 +415,16 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <RouterLink
+        <button
           v-else
-          to="/login"
+          type="button"
           class="btn bg-white h-9 sm:h-10 px-2.5 sm:px-3.5 font-head font-semibold flex items-center gap-1 text-xs sm:text-sm text-ink"
+          @click="openAuthDialog()"
         >
           <UserIcon :size="16" :stroke-width="2.4" class="sm:hidden" />
           <UserIcon :size="18" :stroke-width="2.4" class="hidden sm:block" />
           <span>Masuk</span>
-        </RouterLink>
+        </button>
 
         <!-- Cart Button -->
         <button

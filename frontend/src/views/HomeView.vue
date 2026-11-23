@@ -5,7 +5,6 @@ import BannerCarousel from '@/components/BannerCarousel.vue'
 import CartDrawer from '@/components/CartDrawer.vue'
 import ToastNotice from '@/components/ToastNotice.vue'
 import SiteFooter from '@/components/SiteFooter.vue'
-import GoogleOneTap from '@/components/GoogleOneTap.vue'
 import LatestProductsSection from '@/components/home/LatestProductsSection.vue'
 import SimilarProductsSection from '@/components/home/SimilarProductsSection.vue'
 import PreorderSection from '@/components/home/PreorderSection.vue'
@@ -113,7 +112,6 @@ const {
 
     <CartDrawer />
     <ToastNotice />
-    <GoogleOneTap />
     <SiteFooter />
   </div>
 </template>

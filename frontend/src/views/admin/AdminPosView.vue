@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Calculator, Check, Maximize2, Minimize2, Plus, Printer, ReceiptText, Store, Trash2 } from 'lucide-vue-next'
+import { Calculator, Check, Maximize2, Minimize2, Plus, Printer, ReceiptText, Search, Store, Trash2 } from 'lucide-vue-next'
 import AdminPageHeader from '@/components/ui/AdminPageHeader.vue'
 import AdminButton from '@/components/ui/AdminButton.vue'
 import AdminState from '@/components/ui/AdminState.vue'
@@ -10,6 +10,7 @@ import { adminApi } from '@/api/admin'
 import type { CatalogProduct } from '@/types/catalog'
 import { ApiError } from '@/api/client'
 import { useAuth } from '@/composables/useAuth'
+import { productImageUrl } from '@/lib/productVisual'
 
 interface PosLine { product_id: number; quantity: number }
 interface PosOrderItem { product_name: string; sku?: string; price: string | number; quantity: number; subtotal: string | number }
@@ -25,9 +26,37 @@ interface PosOrderResult {
 }
 interface Receipt { order: PosOrderResult; cash: number; change: number; cashier: string }
 
+/* ---------- Kelas Tailwind yang dipakai berulang ---------- */
+const inputCls =
+  'w-full min-w-0 h-10 rounded-xl border-2 border-ink bg-white px-3 font-body text-sm text-ink ' +
+  'placeholder:text-muted-foreground focus:bg-[#fffaf0]'
+const textareaCls =
+  'w-full min-w-0 resize-y rounded-xl border-2 border-ink bg-white px-3 py-2 font-body text-sm text-ink ' +
+  'placeholder:text-muted-foreground focus:bg-[#fffaf0]'
+const pickerBoxCls =
+  'flex h-12 w-full min-w-0 items-center gap-2 rounded-xl border-2 border-ink bg-white px-2.5 text-ink'
+const ghostBtnCls =
+  'inline-flex h-7 cursor-pointer items-center gap-1 rounded-full border-2 border-ink bg-white px-2.5 ' +
+  'font-body text-[11px] font-extrabold text-ink transition-colors hover:bg-soft aria-pressed:bg-sky'
+const chipBtnCls =
+  'h-8 cursor-pointer rounded-full border-2 border-ink bg-white px-3 font-body text-xs font-extrabold text-ink ' +
+  'shadow-[2px_2px_0_#1B2430] transition-[transform,box-shadow,background-color] duration-100 hover:bg-banner-sun ' +
+  'active:translate-x-0.5 active:translate-y-0.5 active:shadow-none'
+const focusBtnCls =
+  'inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-full border-2 border-bg bg-ink px-3 font-body text-xs ' +
+  'font-extrabold text-bg shadow-[2px_2px_0_#F4B942] transition-[transform,box-shadow,background-color] duration-100 ' +
+  'hover:bg-[#2b3540] aria-pressed:bg-sun aria-pressed:text-ink active:translate-x-0.5 active:translate-y-0.5 active:shadow-none'
+
 const AUTOPRINT_KEY = 'mochibako.pos.autoprint'
 const { user } = useAuth()
 const products = ref<CatalogProduct[]>([])
+const productQueries = ref<Record<number, string>>({})
+const activeProductSearch = ref<number | null>(null)
+const productResults = ref<CatalogProduct[]>([])
+const productSearchOpen = ref(false)
+const productSearchBusy = ref(false)
+let productSearchTimer: ReturnType<typeof setTimeout> | undefined
+let productSearchRequest = 0
 const items = ref<PosLine[]>([{ product_id: 0, quantity: 1 }])
 const customerName = ref('')
 const customerPhone = ref('')
@@ -54,7 +83,7 @@ async function enterFocus() {
   try {
     if (posRoot.value && !document.fullscreenElement) await posRoot.value.requestFullscreen()
   } catch {
-    // Fallback: overlay fixed memenuhi layar lewat class .is-focus
+    // Fallback: overlay fixed memenuhi layar lewat kelas mode fokus
   }
 }
 
@@ -83,26 +112,70 @@ async function loadProducts() {
   }
 }
 
+function findProduct(id: number) {
+  return products.value.find((item) => item.id === id)
+}
+
+function searchProducts(index: number) {
+  if (productSearchTimer) clearTimeout(productSearchTimer)
+  const request = ++productSearchRequest
+  activeProductSearch.value = index
+  const query = (productQueries.value[index] || '').trim()
+  if (!query) {
+    productResults.value = []
+    productSearchBusy.value = false
+    return
+  }
+  productSearchBusy.value = true
+  productSearchTimer = setTimeout(async () => {
+    try {
+      const data = await catalogApi.products({ q: query, page: 1, size: 12 })
+      if (request === productSearchRequest) productResults.value = data.items
+    } catch (cause) {
+      if (request === productSearchRequest) error.value = cause instanceof ApiError ? cause.message : 'Pencarian produk gagal.'
+    } finally {
+      if (request === productSearchRequest) productSearchBusy.value = false
+    }
+  }, 250)
+}
+
+function chooseProduct(line: PosLine, index: number, product: CatalogProduct) {
+  line.product_id = product.id
+  if (!products.value.some((item) => item.id === product.id)) products.value.push(product)
+  productQueries.value[index] = ''
+  productResults.value = []
+  activeProductSearch.value = null
+}
+
+function changeProduct(line: PosLine, index: number) {
+  line.product_id = 0
+  activeProductSearch.value = index
+  productSearchOpen.value = true
+  productQueries.value[index] = ''
+}
+
 function addLine() { items.value.push({ product_id: 0, quantity: 1 }) }
 function removeLine(index: number) {
   if (items.value.length > 1) {
     items.value.splice(index, 1)
+    productQueries.value = {}
     return
   }
   // Baris terakhir tidak dihapus, cukup dikosongkan.
   items.value[index] = { product_id: 0, quantity: 1 }
+  productQueries.value[index] = ''
 }
 function maxQuantity(productId: number) {
-  const product = products.value.find((item) => item.id === productId)
+  const product = findProduct(productId)
   return product ? Math.max(1, product.stock) : undefined
 }
 function lineSubtotal(line: PosLine) {
-  const product = products.value.find((item) => item.id === line.product_id)
+  const product = findProduct(line.product_id)
   return product ? Number(product.price) * Math.max(1, Number(line.quantity) || 0) : null
 }
 
 const lineDetails = computed(() => items.value.flatMap((line) => {
-  const product = products.value.find((item) => item.id === line.product_id)
+  const product = findProduct(line.product_id)
   if (!product) return []
   const quantity = Math.max(1, Number(line.quantity) || 0)
   return [{ product_id: product.id, name: product.name, quantity, subtotal: Number(product.price) * quantity }]
@@ -146,6 +219,8 @@ async function submit() {
     lastReceipt.value = { order: result, cash: paid, change: Math.max(0, paid - orderTotal), cashier: user.value?.name || 'Kasir' }
     receiptVisible.value = true
     items.value = [{ product_id: 0, quantity: 1 }]
+    productQueries.value = {}
+    activeProductSearch.value = null
     customerName.value = ''
     customerPhone.value = ''
     deliveryNote.value = ''
@@ -297,6 +372,8 @@ onMounted(() => {
   document.addEventListener('fullscreenchange', onFullscreenChange)
 })
 onBeforeUnmount(() => {
+  if (productSearchTimer) clearTimeout(productSearchTimer)
+  productSearchRequest++
   document.removeEventListener('fullscreenchange', onFullscreenChange)
   document.body.style.overflow = savedOverflow
   if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined)
@@ -304,799 +381,281 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="posRoot" class="pos-page" :class="{ 'is-focus': focusMode }">
+  <div ref="posRoot" :class="focusMode ? 'fixed inset-0 z-90 overflow-y-auto bg-bg' : ''">
     <AdminPageHeader v-if="!focusMode" title="Kasir acara" description="Catat penjualan langsung. Transaksi POS dibayar tunai dan langsung lunas.">
       <AdminButton variant="primary" @click="enterFocus"><Maximize2 :size="15" /> Mode fokus</AdminButton>
     </AdminPageHeader>
 
-    <header v-else class="pos-focus-bar">
-      <div class="pos-focus-bar__brand">
-        <span class="pos-focus-bar__mark"><Store :size="18" /></span>
-        <div><strong>Kasir acara</strong><small>Mode fokus · {{ totalQty }} item</small></div>
+    <!-- Bar mode fokus -->
+    <header v-else class="sticky top-0 z-15 flex flex-wrap items-center gap-x-4 gap-y-2 border-b-[2.5px] border-ink bg-ink px-3.5 py-2.5 text-bg sm:px-6">
+      <div class="flex min-w-0 items-center gap-2.5">
+        <span class="grid size-9 shrink-0 place-items-center rounded-xl bg-sun text-ink"><Store :size="18" /></span>
+        <div class="leading-tight">
+          <strong class="block font-head text-[15px] font-semibold">Kasir acara</strong>
+          <small class="block text-[11px] text-sky">Mode fokus · {{ totalQty }} item</small>
+        </div>
       </div>
-      <div class="pos-focus-bar__total"><small>Total</small><strong>{{ money(total) }}</strong></div>
-      <div class="pos-focus-bar__actions">
-        <button type="button" class="pos-focus-action" :aria-pressed="calculatorOpen" @click="calculatorOpen = !calculatorOpen"><Calculator :size="16" /> Kalkulator</button>
-        <button type="button" class="pos-focus-action pos-focus-action--exit" @click="exitFocus"><Minimize2 :size="16" /> Keluar</button>
+
+      <div class="ml-auto flex flex-col items-end leading-tight max-sm:w-full max-sm:flex-row max-sm:items-baseline max-sm:gap-2 max-sm:border-t max-sm:border-white/15 max-sm:pt-2">
+        <small class="text-[11px] font-bold text-sky">Total</small>
+        <strong class="font-head text-xl font-semibold tabular-nums text-sun max-sm:text-lg">{{ money(total) }}</strong>
+      </div>
+
+      <div class="flex gap-2 max-sm:ml-auto">
+        <button type="button" :class="focusBtnCls" :aria-pressed="calculatorOpen" @click="calculatorOpen = !calculatorOpen"><Calculator :size="16" /> Kalkulator</button>
+        <button type="button" :class="[focusBtnCls, 'border-pinky! bg-pinky! text-ink! shadow-[2px_2px_0_#F6F3EC]! hover:bg-[#ffc9db]!']" @click="exitFocus"><Minimize2 :size="16" /> Keluar</button>
       </div>
     </header>
 
-    <form id="pos-form" class="admin-pos-layout" @submit.prevent="submit">
-      <section class="admin-panel admin-pos-form">
+    <form
+      id="pos-form"
+      class="grid items-start gap-[18px] lg:grid-cols-[minmax(0,1.55fr)_minmax(300px,0.85fr)]"
+      :class="focusMode ? 'mx-auto max-w-[1400px] px-3.5 pt-4 pb-10 sm:px-6' : ''"
+      @submit.prevent="submit"
+    >
+      <!-- Item transaksi -->
+      <section class="admin-panel overflow-hidden">
         <div class="admin-panel__header">
-          <div><h2>Item transaksi</h2><p>Stok diperbarui otomatis setelah transaksi tersimpan.</p></div>
+          <div>
+            <h2 class="font-head text-base font-bold">Item transaksi</h2>
+            <p class="mt-0.5 text-xs text-muted-foreground">Stok diperbarui otomatis setelah transaksi tersimpan.</p>
+          </div>
           <AdminButton type="button" variant="secondary" @click="addLine"><Plus :size="15" /> Baris</AdminButton>
         </div>
 
-        <div class="admin-pos-lines">
-          <div v-for="(line, index) in items" :key="index" class="admin-pos-line">
+        <div class="grid gap-3 px-[18px] pt-4 pb-1">
+          <div
+            v-for="(line, index) in items"
+            :key="index"
+            class="grid grid-cols-[minmax(0,1fr)_76px_36px] items-end gap-2 sm:grid-cols-[minmax(0,1fr)_96px_40px] sm:gap-2.5"
+          >
+            <div class="admin-field relative">
+              <span class="admin-field__label">Produk</span>
+
+              <button
+                v-if="findProduct(line.product_id)"
+                type="button"
+                :class="[pickerBoxCls, 'cursor-pointer text-left hover:bg-muted']"
+                @click="changeProduct(line, index)"
+              >
+                <img
+                  v-if="productImageUrl(findProduct(line.product_id)!, 96)"
+                  :src="productImageUrl(findProduct(line.product_id)!, 96)!"
+                  :alt="findProduct(line.product_id)?.name"
+                  class="size-9 shrink-0 rounded-lg border-2 border-ink bg-muted object-cover"
+                />
+                <span class="grid min-w-0 gap-0.5">
+                  <strong class="truncate text-xs">{{ findProduct(line.product_id)?.name }}</strong>
+                  <small class="text-[11px] font-medium text-muted-foreground">{{ money(findProduct(line.product_id)?.price) }} · stok {{ findProduct(line.product_id)?.stock }}</small>
+                </span>
+                <Search :size="15" class="ml-auto shrink-0 text-muted-foreground" />
+              </button>
+
+              <div v-else :class="[pickerBoxCls, 'focus-within:bg-[#fffaf0]']">
+                <Search :size="15" class="shrink-0 text-muted-foreground" />
+                <input
+                  v-model="productQueries[index]"
+                  type="search"
+                  placeholder="Cari nama atau SKU produk…"
+                  autocomplete="off"
+                  :required="!line.product_id"
+                  class="h-9 w-full border-0 bg-transparent p-0 font-body text-sm outline-none focus-visible:outline-none"
+                  @focus="activeProductSearch = index; productSearchOpen = true"
+                  @input="searchProducts(index)"
+                />
+              </div>
+
+              <div
+                v-if="productSearchOpen && activeProductSearch === index && !line.product_id && productQueries[index]?.trim()"
+                class="absolute inset-x-0 top-[calc(100%+6px)] z-20 max-h-72 overflow-auto rounded-xl border-2 border-ink bg-white shadow-[4px_4px_0_#1B2430]"
+              >
+                <p v-if="productSearchBusy" class="m-0 p-3.5 text-xs text-muted-foreground">Mencari produk…</p>
+                <p v-else-if="!productResults.length" class="m-0 p-3.5 text-xs text-muted-foreground">Produk tidak ditemukan.</p>
+                <template v-else>
+                  <button
+                    v-for="product in productResults"
+                    :key="product.id"
+                    type="button"
+                    class="flex w-full cursor-pointer items-center gap-2.5 border-0 border-b-2 border-soft bg-white px-2.5 py-2 text-left text-ink last:border-b-0 enabled:hover:bg-banner-sun disabled:cursor-not-allowed disabled:opacity-50"
+                    :disabled="product.stock < 1"
+                    @click="chooseProduct(line, index, product)"
+                  >
+                    <img
+                      v-if="productImageUrl(product, 96)"
+                      :src="productImageUrl(product, 96)!"
+                      :alt="product.name"
+                      loading="lazy"
+                      class="size-9 shrink-0 rounded-lg border-2 border-ink bg-muted object-cover"
+                    />
+                    <span v-else class="grid size-9 shrink-0 place-items-center rounded-lg border-2 border-ink bg-muted text-muted-foreground"><Store :size="16" /></span>
+                    <span class="grid min-w-0 gap-0.5">
+                      <strong class="truncate text-xs">{{ product.name }}</strong>
+                      <small class="text-[11px] font-medium text-muted-foreground">{{ product.sku || 'Tanpa SKU' }} · {{ product.stock ? `Stok ${product.stock}` : 'Stok habis' }}</small>
+                    </span>
+                    <strong class="ml-auto whitespace-nowrap text-xs">{{ money(product.price) }}</strong>
+                  </button>
+                </template>
+              </div>
+            </div>
+
             <label class="admin-field">
-              <span>Produk</span>
-              <select v-model.number="line.product_id" required>
-                <option :value="0" disabled>Pilih produk</option>
-                <option v-for="product in products" :key="product.id" :value="product.id" :disabled="product.stock === 0">
-                  {{ product.name }} · {{ product.stock === 0 ? 'stok habis' : `stok ${product.stock}` }}
-                </option>
-              </select>
+              <span class="admin-field__label">Jumlah</span>
+              <input v-model.number="line.quantity" type="number" min="1" :max="maxQuantity(line.product_id)" required :class="inputCls" />
             </label>
-            <label class="admin-field admin-field--quantity">
-              <span>Jumlah</span>
-              <input v-model.number="line.quantity" type="number" min="1" :max="maxQuantity(line.product_id)" required />
-            </label>
-            <button type="button" class="admin-remove" :aria-label="items.length === 1 ? 'Kosongkan baris' : `Hapus baris ${index + 1}`" @click="removeLine(index)"><Trash2 :size="16" :stroke-width="2" /></button>
-            <p v-if="lineSubtotal(line) !== null" class="admin-pos-line__subtotal">Subtotal {{ money(lineSubtotal(line) || 0) }}</p>
+
+            <button
+              type="button"
+              class="grid h-10 w-full cursor-pointer place-items-center rounded-xl border-2 border-ink bg-white text-destructive shadow-[2px_2px_0_#1B2430] transition-[transform,box-shadow,background-color] duration-100 hover:bg-pinky active:translate-x-0.5 active:translate-y-0.5 active:shadow-none"
+              :aria-label="items.length === 1 ? 'Kosongkan baris' : `Hapus baris ${index + 1}`"
+              @click="removeLine(index)"
+            >
+              <Trash2 :size="16" :stroke-width="2" />
+            </button>
+
+            <p v-if="lineSubtotal(line) !== null" class="col-span-full -mt-0.5 mb-0.5 text-right text-xs font-bold text-muted-foreground">
+              Subtotal {{ money(lineSubtotal(line) || 0) }}
+            </p>
           </div>
         </div>
 
-        <div class="admin-pos-customer">
+        <div class="grid gap-3.5 px-[18px] pt-3 pb-[18px] sm:grid-cols-2">
           <label class="admin-field">
-            <span>Nama pembeli</span>
-            <input v-model="customerName" type="text" placeholder="Pembeli Event" autocomplete="off" />
+            <span class="admin-field__label">Nama pembeli</span>
+            <input v-model="customerName" type="text" placeholder="Pembeli Event" autocomplete="off" :class="inputCls" />
           </label>
           <label class="admin-field">
-            <span>Nomor telepon <small>(opsional)</small></span>
-            <input v-model="customerPhone" type="tel" inputmode="tel" placeholder="08xxxxxxxxxx" autocomplete="off" />
+            <span class="admin-field__label">Nomor telepon <small class="font-medium text-muted-foreground">(opsional)</small></span>
+            <input v-model="customerPhone" type="tel" inputmode="tel" placeholder="08xxxxxxxxxx" autocomplete="off" :class="inputCls" />
           </label>
-          <label class="admin-field">
-            <span>Catatan transaksi</span>
-            <textarea v-model="deliveryNote" rows="2" placeholder="Nama event atau lokasi booth" />
+          <label class="admin-field sm:col-span-2">
+            <span class="admin-field__label">Catatan transaksi</span>
+            <textarea v-model="deliveryNote" rows="2" placeholder="Nama event atau lokasi booth" :class="textareaCls" />
           </label>
         </div>
 
-        <AdminState v-if="!products.length && !error" kind="loading" message="Memuat pilihan produk…" />
-        <AdminState v-if="error" kind="error" :message="error" />
+        <div class="px-[18px] pb-[18px] empty:hidden">
+          <AdminState v-if="!products.length && !error" kind="loading" message="Memuat pilihan produk…" />
+          <AdminState v-if="error" kind="error" :message="error" />
+        </div>
       </section>
 
-      <aside class="admin-pos-aside">
-        <section v-if="receiptVisible && lastReceipt" ref="receiptEl" class="pos-receipt-card" role="status">
-          <header class="pos-receipt-card__head">
-            <span class="pos-receipt-card__icon"><Check :size="16" /></span>
-            <div><strong>Transaksi tersimpan</strong><small>{{ lastReceipt.order.order_number }}</small></div>
+      <!-- Panel kanan -->
+      <aside class="grid content-start gap-3.5 lg:sticky" :class="focusMode ? 'lg:top-[74px]' : 'lg:top-[18px]'">
+        <!-- Struk terakhir -->
+        <section
+          v-if="receiptVisible && lastReceipt"
+          ref="receiptEl"
+          role="status"
+          class="rounded-2xl border-[2.5px] border-ink bg-banner-sun p-4 shadow-[4px_4px_0_#1B2430]"
+        >
+          <header class="flex items-center gap-2.5">
+            <span class="grid size-8 shrink-0 place-items-center rounded-full border-2 border-ink bg-mint text-ink"><Check :size="16" /></span>
+            <div class="min-w-0">
+              <strong class="block font-head text-sm font-semibold">Transaksi tersimpan</strong>
+              <small class="block truncate font-mono text-[11px] text-ink/70">{{ lastReceipt.order.order_number }}</small>
+            </div>
           </header>
-          <dl class="pos-receipt-card__meta">
-            <div><dt>Total</dt><dd>{{ money(lastReceipt.order.total) }}</dd></div>
-            <div><dt>Tunai</dt><dd>{{ money(lastReceipt.cash) }}</dd></div>
-            <div><dt>Kembali</dt><dd>{{ money(lastReceipt.change) }}</dd></div>
+
+          <dl class="my-3 grid grid-cols-3 gap-2 border-y-2 border-dashed border-ink/30 py-2.5">
+            <div class="min-w-0">
+              <dt class="text-[11px] font-bold text-ink/60">Total</dt>
+              <dd class="m-0 mt-0.5 truncate text-xs font-extrabold tabular-nums">{{ money(lastReceipt.order.total) }}</dd>
+            </div>
+            <div class="min-w-0">
+              <dt class="text-[11px] font-bold text-ink/60">Tunai</dt>
+              <dd class="m-0 mt-0.5 truncate text-xs font-extrabold tabular-nums">{{ money(lastReceipt.cash) }}</dd>
+            </div>
+            <div class="min-w-0">
+              <dt class="text-[11px] font-bold text-ink/60">Kembali</dt>
+              <dd class="m-0 mt-0.5 truncate text-xs font-extrabold tabular-nums">{{ money(lastReceipt.change) }}</dd>
+            </div>
           </dl>
-          <div class="pos-receipt-card__actions">
-            <AdminButton variant="primary" @click="printLastReceipt"><Printer :size="15" /> Cetak struk</AdminButton>
-            <AdminButton variant="secondary" @click="startNew"><Plus :size="15" /> Transaksi baru</AdminButton>
+
+          <div class="grid gap-2 sm:grid-cols-2">
+            <AdminButton variant="primary" class="h-9! px-2! text-xs!" @click="printLastReceipt"><Printer :size="15" /> Cetak struk</AdminButton>
+            <AdminButton variant="secondary" class="h-9! px-2! text-xs!" @click="startNew"><Plus :size="15" /> Transaksi baru</AdminButton>
           </div>
-          <label class="pos-autoprint"><input v-model="autoPrint" type="checkbox" /><span>Cetak struk otomatis setelah transaksi</span></label>
+
+          <label class="mt-2.5 flex cursor-pointer items-center gap-2 text-xs font-semibold text-ink/70">
+            <input v-model="autoPrint" type="checkbox" class="accent-ink" />
+            <span>Cetak struk otomatis setelah transaksi</span>
+          </label>
         </section>
 
-        <section class="pos-summary admin-panel">
-          <header class="pos-summary__head">
-            <div><h2>Ringkasan</h2><p>{{ totalQty }} item · {{ lineDetails.length }} produk</p></div>
-            <div class="pos-summary__head-actions">
-              <button v-if="lastReceipt && !receiptVisible" type="button" class="pos-ghost-button" @click="receiptVisible = true"><ReceiptText :size="14" /> Struk</button>
-              <button type="button" class="pos-ghost-button" :aria-pressed="calculatorOpen" @click="calculatorOpen = !calculatorOpen"><Calculator :size="14" /> {{ calculatorOpen ? 'Tutup' : 'Kalkulator' }}</button>
+        <!-- Ringkasan -->
+        <section class="admin-panel overflow-hidden">
+          <header class="flex items-start justify-between gap-2.5 border-b-2 border-ink/10 px-4 py-3.5">
+            <div>
+              <h2 class="m-0 font-head text-base font-bold">Ringkasan</h2>
+              <p class="mt-0.5 text-xs text-muted-foreground">{{ totalQty }} item · {{ lineDetails.length }} produk</p>
+            </div>
+            <div class="flex flex-wrap justify-end gap-1.5">
+              <button v-if="lastReceipt && !receiptVisible" type="button" :class="ghostBtnCls" @click="receiptVisible = true"><ReceiptText :size="14" /> Struk</button>
+              <button type="button" :class="ghostBtnCls" :aria-pressed="calculatorOpen" @click="calculatorOpen = !calculatorOpen"><Calculator :size="14" /> {{ calculatorOpen ? 'Tutup' : 'Kalkulator' }}</button>
             </div>
           </header>
 
-          <dl class="pos-summary__lines">
-            <div v-for="line in lineDetails" :key="line.product_id">
-              <dt>{{ line.quantity }}× {{ line.name }}</dt>
-              <dd>{{ money(line.subtotal) }}</dd>
+          <dl v-if="lineDetails.length" class="m-0 grid max-h-52 gap-1.5 overflow-auto px-4 py-3">
+            <div v-for="line in lineDetails" :key="line.product_id" class="flex justify-between gap-2.5 text-xs">
+              <dt class="truncate text-ink/80">{{ line.quantity }}× {{ line.name }}</dt>
+              <dd class="m-0 shrink-0 whitespace-nowrap font-bold tabular-nums">{{ money(line.subtotal) }}</dd>
             </div>
           </dl>
-          <p v-if="!lineDetails.length" class="pos-summary__empty">Belum ada item dipilih.</p>
+          <p v-else class="m-0 px-4 py-3.5 text-xs text-muted-foreground">Belum ada item dipilih.</p>
 
-          <div class="pos-summary__total"><span>Total</span><strong>{{ money(total) }}</strong></div>
+          <div class="flex items-baseline justify-between gap-3 border-t-2 border-ink bg-banner-sun px-4 py-3">
+            <span class="text-sm font-bold">Total</span>
+            <strong class="font-head text-2xl font-semibold tracking-tight tabular-nums">{{ money(total) }}</strong>
+          </div>
 
-          <div class="pos-summary__cash">
-            <label class="pos-cash-field" for="pos-cash">
-              <span>Uang diterima</span>
-              <div class="pos-cash-input">
-                <span>Rp</span>
-                <input id="pos-cash" v-model="cashReceived" type="number" min="0" step="1000" inputmode="numeric" placeholder="0" autocomplete="off" />
+          <div class="grid gap-2.5 border-t-2 border-ink/10 px-4 py-3.5">
+            <label class="grid gap-1.5" for="pos-cash">
+              <span class="text-xs font-bold text-ink/70">Uang diterima</span>
+              <div class="flex h-11 items-center gap-1.5 rounded-xl border-2 border-ink bg-white px-3 focus-within:bg-[#fffaf0]">
+                <span class="shrink-0 text-xs font-extrabold text-ink/50">Rp</span>
+                <input
+                  id="pos-cash"
+                  v-model="cashReceived"
+                  type="number"
+                  min="0"
+                  step="1000"
+                  inputmode="numeric"
+                  placeholder="0"
+                  autocomplete="off"
+                  class="h-full w-full border-0 bg-transparent p-0 text-right font-body text-base font-bold tabular-nums outline-none focus-visible:outline-none"
+                />
               </div>
             </label>
 
-            <div v-if="quickCash.length" class="pos-quick-cash">
-              <button v-for="amount in quickCash" :key="amount" type="button" @click="cashReceived = String(amount)">{{ amount === total ? 'Uang pas' : money(amount) }}</button>
+            <div v-if="quickCash.length" class="flex flex-wrap gap-1.5">
+              <button v-for="amount in quickCash" :key="amount" type="button" :class="chipBtnCls" @click="cashReceived = String(amount)">
+                {{ amount === total ? 'Uang pas' : money(amount) }}
+              </button>
             </div>
 
-            <div class="pos-change" :class="{ 'is-short': change < 0 }">
-              <span>{{ change < 0 ? 'Kurang' : 'Kembalian' }}</span>
-              <strong>{{ money(Math.abs(change)) }}</strong>
+            <div
+              class="flex items-baseline justify-between gap-3 rounded-xl border-2 border-ink px-3 py-2"
+              :class="change < 0 ? 'bg-pinky' : 'bg-mint'"
+            >
+              <span class="text-xs font-bold">{{ change < 0 ? 'Kurang' : 'Kembalian' }}</span>
+              <strong class="font-head text-base font-semibold tabular-nums">{{ money(Math.abs(change)) }}</strong>
             </div>
-            <p v-if="change < 0" class="pos-change-note">Uang tunai belum cukup untuk total transaksi.</p>
+            <p v-if="change < 0" class="-mt-0.5 text-[11px] font-semibold text-destructive">Uang tunai belum cukup untuk total transaksi.</p>
           </div>
 
-          <div class="pos-summary__actions">
-            <AdminButton type="submit" variant="primary" :disabled="!canSubmit">{{ busy ? 'Menyimpan…' : 'Simpan & bayar tunai' }}</AdminButton>
-            <p class="pos-summary__hint">Tekan Enter di kolom uang untuk menyimpan transaksi.</p>
+          <div class="px-4 pb-3.5">
+            <AdminButton type="submit" variant="primary" class="h-11! w-full! text-sm!" :disabled="!canSubmit">{{ busy ? 'Menyimpan…' : 'Simpan & bayar tunai' }}</AdminButton>
+            <p class="mt-2 mb-0 text-center text-[11px] text-ink/50">Tekan Enter di kolom uang untuk menyimpan transaksi.</p>
           </div>
         </section>
 
         <PosCalculator v-if="calculatorOpen" @use="applyCalculator" />
 
-        <div v-if="!focusMode" class="pos-help">
-          <strong>Informasi kasir</strong>
-          <p>Transaksi POS dicatat sebagai tunai dan langsung lunas. Gunakan mode fokus untuk layar kasir penuh dengan kalkulator.</p>
+        <div v-if="!focusMode" class="border-t-[3px] border-sun px-0.5 pt-3.5">
+          <strong class="font-head text-sm font-semibold">Informasi kasir</strong>
+          <p class="mt-1 mb-0 text-sm leading-relaxed text-muted-foreground">Transaksi POS dicatat sebagai tunai dan langsung lunas. Gunakan mode fokus untuk layar kasir penuh dengan kalkulator.</p>
         </div>
       </aside>
     </form>
   </div>
 </template>
-
-<style scoped>
-/* ---------- Kerangka ---------- */
-.admin-pos-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(300px, 0.85fr);
-  gap: 18px;
-  align-items: start;
-}
-
-.admin-pos-form {
-  overflow: hidden;
-}
-
-.admin-pos-lines {
-  display: grid;
-  gap: 12px;
-  padding: 16px 18px 4px;
-}
-
-.admin-pos-line {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 96px 34px;
-  gap: 10px;
-  align-items: end;
-}
-
-.admin-pos-line__subtotal {
-  grid-column: 1 / -1;
-  margin: -2px 0 2px;
-  color: #7a8289;
-  font-size: 11px;
-  font-weight: 700;
-  text-align: right;
-}
-
-.admin-pos-customer {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-  padding: 12px 18px 18px;
-}
-
-.admin-pos-customer .admin-field:last-child {
-  grid-column: 1 / -1;
-}
-
-.admin-field {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.admin-field > span {
-  display: flex;
-  align-items: baseline;
-  gap: 5px;
-  color: #4e5863;
-}
-
-.admin-field small {
-  color: #8a9198;
-  font-weight: 500;
-  font-size: 11px;
-}
-
-.admin-field input,
-.admin-field select,
-.admin-field textarea {
-  width: 100%;
-  min-width: 0;
-  border: 1px solid #dcd8ce;
-  border-radius: 7px;
-  background: #fff;
-  color: #1b2430;
-  font: 400 13.5px var(--font-body);
-  padding: 9px 10px;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-
-.admin-field input,
-.admin-field select {
-  height: 40px;
-}
-
-.admin-field textarea {
-  resize: vertical;
-}
-
-.admin-field input:focus-visible,
-.admin-field select:focus-visible,
-.admin-field textarea:focus-visible {
-  outline: none;
-  border-color: #d9b04a;
-  box-shadow: 0 0 0 3px #f6e6b3;
-}
-
-.admin-remove {
-  height: 40px;
-  border: 1px solid #e3d9d5;
-  border-radius: 7px;
-  background: #fff;
-  color: #8b5449;
-  cursor: pointer;
-}
-
-.admin-remove:hover {
-  background: #fbf1ee;
-  border-color: #d9bdb5;
-}
-
-/* ---------- Panel kanan ---------- */
-.admin-pos-aside {
-  position: sticky;
-  top: 18px;
-  display: grid;
-  gap: 13px;
-  align-content: start;
-}
-
-.pos-summary {
-  overflow: hidden;
-}
-
-.pos-summary__head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 14px 16px;
-  border-bottom: 1px solid #e8e5dd;
-}
-
-.pos-summary__head h2 {
-  margin: 0;
-  font: 600 16px var(--font-head);
-}
-
-.pos-summary__head p {
-  margin: 3px 0 0;
-  color: #68717b;
-  font-size: 11.5px;
-}
-
-.pos-summary__head-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px;
-}
-
-.pos-ghost-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 29px;
-  padding: 0 9px;
-  border: 1px solid #e0dbcf;
-  border-radius: 7px;
-  background: #fff;
-  color: #5b6470;
-  font: 700 10.5px var(--font-body);
-  cursor: pointer;
-}
-
-.pos-ghost-button:hover {
-  background: #f6f3ea;
-  color: #1b2430;
-}
-
-.pos-summary__lines {
-  display: grid;
-  gap: 6px;
-  max-height: 210px;
-  margin: 0;
-  padding: 12px 16px;
-  overflow: auto;
-}
-
-.pos-summary__lines > div {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  font-size: 12px;
-}
-
-.pos-summary__lines dt {
-  overflow: hidden;
-  color: #4e5863;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.pos-summary__lines dd {
-  margin: 0;
-  flex: none;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.pos-summary__empty {
-  margin: 0;
-  padding: 14px 16px;
-  color: #818a92;
-  font-size: 12px;
-}
-
-.pos-summary__total {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 16px;
-  border-top: 1px solid #e8e5dd;
-  background: #fbf9f3;
-}
-
-.pos-summary__total span {
-  color: #68717b;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.pos-summary__total strong {
-  font: 600 23px var(--font-head);
-  letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums;
-}
-
-.pos-summary__cash {
-  display: grid;
-  gap: 10px;
-  padding: 13px 16px;
-  border-top: 1px solid #e8e5dd;
-}
-
-.pos-cash-field {
-  display: grid;
-  gap: 6px;
-}
-
-.pos-cash-field > span {
-  color: #5c6670;
-  font-size: 10.5px;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.pos-cash-input {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 44px;
-  padding: 0 11px;
-  border: 1px solid #d8d4ca;
-  border-radius: 8px;
-  background: #fff;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-
-.pos-cash-input:focus-within {
-  border-color: #d9b04a;
-  box-shadow: 0 0 0 3px #f6e6b3;
-}
-
-.pos-cash-input span {
-  flex: none;
-  color: #8a9198;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.pos-cash-input input {
-  width: 100%;
-  height: 100%;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: #1b2430;
-  font: 700 16px var(--font-body);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-.pos-quick-cash {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.pos-quick-cash button {
-  height: 30px;
-  padding: 0 10px;
-  border: 1px solid #ddd4bd;
-  border-radius: 999px;
-  background: #fff;
-  color: #5d4a13;
-  font: 700 11.5px var(--font-body);
-  cursor: pointer;
-}
-
-.pos-quick-cash button:hover {
-  background: #fff6dc;
-  border-color: #d9bf7c;
-}
-
-.pos-change {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 10px;
-  border-radius: 7px;
-  background: #eef5ef;
-  color: #2f5b38;
-}
-
-.pos-change span {
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.pos-change strong {
-  font: 600 16px var(--font-head);
-  font-variant-numeric: tabular-nums;
-}
-
-.pos-change.is-short {
-  background: #fbefec;
-  color: #8a453a;
-}
-
-.pos-change-note {
-  margin: -3px 0 0;
-  color: #8a453a;
-  font-size: 10.5px;
-  font-weight: 600;
-}
-
-.pos-summary__actions {
-  padding: 0 16px 14px;
-}
-
-.pos-summary__actions :deep(.admin-button) {
-  width: 100%;
-  height: 44px;
-  font-size: 13.5px;
-}
-
-.pos-summary__hint {
-  margin: 7px 0 0;
-  color: #8a9198;
-  font-size: 10.5px;
-  text-align: center;
-}
-
-/* ---------- Kartu struk ---------- */
-.pos-receipt-card {
-  padding: 14px 16px;
-  border: 1px solid #d9c9a0;
-  border-radius: 10px;
-  background: #fffdf6;
-  box-shadow: 0 1px 2px #1b24300a;
-}
-
-.pos-receipt-card__head {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-}
-
-.pos-receipt-card__head strong {
-  display: block;
-  font: 600 14px var(--font-head);
-  color: #3d2f08;
-}
-
-.pos-receipt-card__head small {
-  display: block;
-  margin-top: 1px;
-  color: #7a6a3d;
-  font: 500 11px ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-
-.pos-receipt-card__icon {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
-  background: #e8f2e9;
-  color: #2f5b38;
-}
-
-.pos-receipt-card__meta {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  margin: 11px 0;
-  padding: 9px 0;
-  border-top: 1px dashed #e2d6b4;
-  border-bottom: 1px dashed #e2d6b4;
-}
-
-.pos-receipt-card__meta dt {
-  color: #8a7b52;
-  font-size: 9.5px;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.pos-receipt-card__meta dd {
-  margin: 2px 0 0;
-  overflow: hidden;
-  font-size: 12px;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pos-receipt-card__actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.pos-receipt-card__actions :deep(.admin-button) {
-  height: 36px;
-  font-size: 11.5px;
-  padding: 0 8px;
-}
-
-.pos-autoprint {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-top: 10px;
-  color: #6d644d;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.pos-autoprint input {
-  accent-color: #9b6d00;
-}
-
-.pos-help {
-  padding: 13px 2px 0;
-  border-top: 2px solid #d8bb6e;
-}
-
-.pos-help strong {
-  font: 600 14px var(--font-head);
-}
-
-.pos-help p {
-  margin: 4px 0 0;
-  color: #68717b;
-  font-size: 12.5px;
-  line-height: 1.55;
-}
-
-/* ---------- Mode fokus ---------- */
-.pos-page.is-focus {
-  position: fixed;
-  inset: 0;
-  z-index: 90;
-  overflow-y: auto;
-  background: #f6f3ec;
-}
-
-.pos-page:fullscreen {
-  overflow-y: auto;
-  background: #f6f3ec;
-}
-
-.pos-page.is-focus .admin-pos-layout {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 16px clamp(14px, 2.4vw, 28px) 40px;
-}
-
-.pos-page.is-focus .admin-pos-aside {
-  top: 74px;
-}
-
-.pos-focus-bar {
-  position: sticky;
-  top: 0;
-  z-index: 15;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 9px clamp(14px, 2.4vw, 28px);
-  background: #1b2430;
-  color: #f6f3ec;
-  box-shadow: 0 4px 18px #1b243029;
-}
-
-.pos-focus-bar__brand {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  min-width: 0;
-}
-
-.pos-focus-bar__mark {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 34px;
-  height: 34px;
-  border-radius: 9px;
-  background: #f4c45a;
-  color: #1b2430;
-}
-
-.pos-focus-bar__brand strong {
-  display: block;
-  font: 600 15px var(--font-head);
-}
-
-.pos-focus-bar__brand small {
-  display: block;
-  color: #aab3bc;
-  font-size: 11px;
-}
-
-.pos-focus-bar__total {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  margin-left: auto;
-  line-height: 1.1;
-}
-
-.pos-focus-bar__total small {
-  color: #aab3bc;
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-}
-
-.pos-focus-bar__total strong {
-  color: #f7cd6f;
-  font: 600 20px var(--font-head);
-  font-variant-numeric: tabular-nums;
-}
-
-.pos-focus-bar__actions {
-  display: flex;
-  gap: 7px;
-}
-
-.pos-focus-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 36px;
-  padding: 0 12px;
-  border: 1px solid #46505c;
-  border-radius: 8px;
-  background: #2b3540;
-  color: #e8ecf0;
-  font: 700 12px var(--font-body);
-  cursor: pointer;
-}
-
-.pos-focus-action:hover {
-  background: #3a4552;
-}
-
-.pos-focus-action--exit {
-  border-color: #7c4b40;
-  background: #56332c;
-  color: #ffd9cf;
-}
-
-.pos-focus-action--exit:hover {
-  background: #683e35;
-}
-
-/* ---------- Responsif ---------- */
-@media (max-width: 980px) {
-  .admin-pos-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .admin-pos-aside {
-    position: static;
-  }
-
-  .pos-page.is-focus .admin-pos-aside {
-    top: auto;
-  }
-}
-
-@media (max-width: 640px) {
-  .pos-focus-bar {
-    flex-wrap: wrap;
-    gap: 8px;
-    padding: 9px 14px;
-  }
-
-  .pos-focus-bar__total {
-    flex-direction: row;
-    align-items: baseline;
-    gap: 7px;
-    width: 100%;
-    margin-left: 0;
-    padding-top: 7px;
-    border-top: 1px solid #36414c;
-  }
-
-  .pos-focus-bar__total strong {
-    font-size: 18px;
-  }
-
-  .pos-focus-bar__actions {
-    margin-left: auto;
-  }
-
-  .pos-focus-action {
-    padding: 0 10px;
-    font-size: 11.5px;
-  }
-
-  .pos-receipt-card__actions {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 560px) {
-  .admin-pos-line {
-    grid-template-columns: minmax(0, 1fr) 76px 32px;
-    gap: 7px;
-  }
-
-  .admin-pos-customer {
-    grid-template-columns: 1fr;
-  }
-
-  .admin-pos-customer .admin-field:last-child {
-    grid-column: auto;
-  }
-}
-</style>

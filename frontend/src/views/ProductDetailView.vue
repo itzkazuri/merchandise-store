@@ -22,7 +22,7 @@ const {
   maxStock,
   soldOut,
   subtotal,
-  productImage,
+  productImageRaw,
   loadProduct,
   handleAdd,
   buyNow,
@@ -38,7 +38,7 @@ useHead(() => {
   const description =
     current?.description?.trim() ||
     'Lihat detail produk merchandise anime di Mochibako: harga, stok, dan cara pengambilan.'
-  const image = productImage.value
+  const image = productImageRaw.value
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
   const siteUrl = (import.meta.env.VITE_SITE_URL || origin).replace(/\/$/, '')
   const canonical = current

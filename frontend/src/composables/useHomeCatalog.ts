@@ -3,6 +3,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { catalogApi } from '@/api/catalog'
 import { ApiError } from '@/api/client'
 import { useAuth } from '@/composables/useAuth'
+import { openAuthDialog } from '@/composables/useAuthDialog'
 import { useCart } from '@/composables/useCart'
 import { useToast } from '@/composables/useToast'
 import { decorateProduct, isPreorder, visualForCategory } from '@/lib/productVisual'
@@ -327,7 +328,7 @@ export function useHomeCatalog() {
   function handleAdd(product: CatalogProduct) {
     if (!isAuthenticated.value) {
       showToast('Masuk dulu untuk menambah ke keranjang')
-      router.push({ name: 'login', query: { redirect: route.fullPath } })
+      openAuthDialog(route.fullPath)
       return
     }
     if (Number(product.stock ?? 0) <= 0) {
@@ -358,7 +359,7 @@ export function useHomeCatalog() {
   async function handleToggleLike(product: CatalogProduct) {
     if (!isAuthenticated.value) {
       showToast('Masuk dulu untuk menyimpan produk favorit')
-      router.push({ name: 'login', query: { redirect: route.fullPath } })
+      openAuthDialog(route.fullPath)
       return
     }
 

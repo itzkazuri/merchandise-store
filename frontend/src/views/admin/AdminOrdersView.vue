@@ -7,6 +7,8 @@ import AdminDataTable from '@/components/ui/AdminDataTable.vue'
 import AdminDialog from '@/components/ui/AdminDialog.vue'
 import AdminStatus from '@/components/ui/AdminStatus.vue'
 import AdminState from '@/components/ui/AdminState.vue'
+import AppSelect from '@/components/ui/AppSelect.vue'
+import AppDatePicker from '@/components/ui/AppDatePicker.vue'
 import { adminApi } from '@/api/admin'
 import { ApiError } from '@/api/client'
 
@@ -59,6 +61,16 @@ const DELIVERY_OPTIONS: { value: DeliveryMethod; label: string }[] = [
   { value: 'courier', label: 'Dikirim kurir' },
   { value: 'custom', label: 'Custom / event' },
 ]
+
+const statusSelectOptions = computed(() => [
+  { value: '', label: 'Semua status' },
+  ...STATUS_OPTIONS,
+])
+
+const deliverySelectOptions = computed(() => [
+  { value: '', label: 'Semua pengiriman' },
+  ...DELIVERY_OPTIONS,
+])
 const NEXT_STATUS: Partial<Record<OrderStatus, { status: OrderStatus; label: string }>> = {
   paid: { status: 'processing', label: 'Proses pesanan' },
   processing: { status: 'shipped', label: 'Kirim pesanan' },
@@ -320,30 +332,52 @@ onMounted(() => load())
           </button>
         </div>
 
-        <label class="admin-order-filter">
+        <div class="admin-order-filter min-w-[150px]">
           <span class="sr-only">Status pesanan</span>
-          <select v-model="statusFilter" aria-label="Filter status pesanan" @change="runSearch">
-            <option value="">Semua status</option>
-            <option v-for="option in STATUS_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</option>
-          </select>
-        </label>
+          <AppSelect
+            v-model="statusFilter"
+            :options="statusSelectOptions"
+            variant="admin"
+            size="sm"
+            aria-label="Filter status pesanan"
+            @change="runSearch"
+          />
+        </div>
 
-        <label class="admin-order-filter">
+        <div class="admin-order-filter min-w-[165px]">
           <span class="sr-only">Metode pengiriman</span>
-          <select v-model="deliveryFilter" aria-label="Filter metode pengiriman" @change="runSearch">
-            <option value="">Semua pengiriman</option>
-            <option v-for="option in DELIVERY_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</option>
-          </select>
-        </label>
+          <AppSelect
+            v-model="deliveryFilter"
+            :options="deliverySelectOptions"
+            variant="admin"
+            size="sm"
+            aria-label="Filter metode pengiriman"
+            @change="runSearch"
+          />
+        </div>
 
-        <label class="admin-order-date">
-          <span>Dari</span>
-          <input v-model="dateFrom" type="date" aria-label="Tanggal mulai" @change="runSearch" />
-        </label>
-        <label class="admin-order-date">
-          <span>Sampai</span>
-          <input v-model="dateTo" type="date" aria-label="Tanggal akhir" @change="runSearch" />
-        </label>
+        <div class="admin-order-date flex items-center gap-1.5 min-w-[140px]">
+          <span class="text-xs font-semibold text-ink/65 shrink-0">Dari</span>
+          <AppDatePicker
+            v-model="dateFrom"
+            variant="admin"
+            size="sm"
+            placeholder="Mulai"
+            aria-label="Tanggal mulai"
+            @change="runSearch"
+          />
+        </div>
+        <div class="admin-order-date flex items-center gap-1.5 min-w-[140px]">
+          <span class="text-xs font-semibold text-ink/65 shrink-0">Sampai</span>
+          <AppDatePicker
+            v-model="dateTo"
+            variant="admin"
+            size="sm"
+            placeholder="Sampai"
+            aria-label="Tanggal akhir"
+            @change="runSearch"
+          />
+        </div>
 
         <button v-if="hasActiveFilters" type="button" class="admin-order-reset" @click="resetFilters">
           <RotateCcw :size="13" /> Reset

@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    AUTH_COOKIE_SECURE: bool = False
+    AUTH_COOKIE_SAMESITE: str = "lax"
 
     # ==========================================
     # GOOGLE OAUTH 2.0 LOGIN
@@ -114,6 +116,15 @@ class Settings(BaseSettings):
     # CORS
     # ==========================================
     CORS_ORIGINS: str = "http://localhost:5173"
+
+    @property
+    def cookie_samesite(self) -> str:
+        value = self.AUTH_COOKIE_SAMESITE.lower()
+        return value if value in {"lax", "strict", "none"} else "lax"
+
+    @property
+    def auth_cookie_secure(self) -> bool:
+        return self.AUTH_COOKIE_SECURE or self.cookie_samesite == "none" or self.APP_ENV.lower() in {"production", "prod"}
 
     @property
     def cors_origins(self) -> list[str]:

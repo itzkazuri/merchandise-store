@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import DynamicIcon from './DynamicIcon.vue'
 import type { CatalogProduct } from '@/types/catalog'
-import { productImageSrcSet, productImageUrl, visualFor } from '@/lib/productVisual'
+import { catalogImageUrl, primaryImage, productImageSrcSet, productImageUrl, visualFor } from '@/lib/productVisual'
 
 const props = withDefaults(
   defineProps<{
@@ -23,6 +23,18 @@ const props = withDefaults(
 const visual = computed(() => visualFor(props.product))
 const src = computed(() => productImageUrl(props.product, props.imageWidth))
 const srcset = computed(() => productImageSrcSet(props.product, props.imageWidth))
+const fallbackSrc = computed(() => catalogImageUrl(primaryImage(props.product)))
+
+let fellBack = false
+function handleImageError(event: Event) {
+  if (fellBack) return
+  const image = event.target as HTMLImageElement
+  const raw = fallbackSrc.value
+  if (!raw) return
+  fellBack = true
+  image.removeAttribute('srcset')
+  image.src = raw
+}
 </script>
 
 <template>
@@ -39,6 +51,7 @@ const srcset = computed(() => productImageSrcSet(props.product, props.imageWidth
         :width="imageWidth"
         :height="imageWidth"
         class="absolute inset-0 h-full w-full object-cover"
+        @error="handleImageError"
       />
     </template>
     <template v-else>

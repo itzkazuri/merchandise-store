@@ -1,18 +1,22 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { onMounted } from 'vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { ServerCrash, Home, RefreshCw } from 'lucide-vue-next'
 import StoreShell from '@/components/StoreShell.vue'
 import { useSeo } from '@/composables/useSeo'
 
 useSeo({ title: '500 — Server Error' })
 
-const props = defineProps<{ error?: string }>()
 const route = useRoute()
+const router = useRouter()
 
-const errorMsg = computed(() =>
-  props.error || (typeof route.query.error === 'string' ? route.query.error : '')
-)
+onMounted(() => {
+  // Bersihkan tautan lama yang masih membawa ?error=... / query lain di
+  // address bar. Detail error tidak ditampilkan ke pengunjung.
+  if (Object.keys(route.query).length > 0) {
+    void router.replace({ name: 'server-error' })
+  }
+})
 
 function reload() {
   window.location.reload()
@@ -44,13 +48,6 @@ function reload() {
             Server kami sedang mengalami gangguan. Tim kami sudah diberitahu dan sedang menangani ini.
             Coba refresh halaman atau kembali beberapa saat lagi.
           </p>
-
-          <div
-            v-if="errorMsg"
-            class="mt-4 rounded-xl border-2 border-destructive/30 bg-destructive/5 px-3.5 py-3 text-xs font-mono text-destructive break-all"
-          >
-            {{ errorMsg }}
-          </div>
 
           <div class="mt-6 flex flex-wrap gap-3">
             <button

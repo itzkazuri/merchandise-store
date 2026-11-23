@@ -34,3 +34,16 @@ class UserRolesUpdate(BaseModel):
 
 class UserStatusUpdate(BaseModel):
     is_active: bool
+
+
+class UserCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=100)
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
+    role: str = Field(default="staff", description="Role: admin atau staff")
+
+
+class UserProfileUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=100)
+    current_password: str | None = Field(default=None)
+    new_password: str | None = Field(default=None, min_length=8, max_length=128)

@@ -15,6 +15,7 @@ const DEFAULT_TITLE = 'Mochibako – Merch & Mainan Anime'
 const DEFAULT_DESC =
   'Koleksi figure, blind box, plushie, dan merchandise anime pilihan untuk ruang kecil dan hati yang penuh.'
 const DEFAULT_IMAGE = '/favicon.ico'
+const toSafeJsonLd = (value: unknown) => JSON.stringify(value).replace(/</g, '\\u003c')
 
 /**
  * Universal SEO & Product Metadata Composable berbasis @unhead/vue
@@ -46,7 +47,7 @@ export function useSeo(options: SeoOptions) {
       script: [
         {
           type: 'application/ld+json',
-          innerHTML: JSON.stringify({
+          innerHTML: toSafeJsonLd({
             '@context': 'https://schema.org/',
             '@type': 'Product',
             name: options.title,
@@ -67,7 +68,7 @@ export function useSeo(options: SeoOptions) {
       script: [
         {
           type: 'application/ld+json',
-          innerHTML: JSON.stringify({
+          innerHTML: toSafeJsonLd({
             '@context': 'https://schema.org',
             '@type': 'Store',
             name: 'Mochibako',

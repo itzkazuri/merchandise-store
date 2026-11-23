@@ -6,6 +6,7 @@ import AdminButton from '@/components/ui/AdminButton.vue'
 import AdminDataTable from '@/components/ui/AdminDataTable.vue'
 import AdminState from '@/components/ui/AdminState.vue'
 import AdminProductForm from '@/components/admin/AdminProductForm.vue'
+import AppSelect from '@/components/ui/AppSelect.vue'
 import { catalogApi } from '@/api/catalog'
 import { adminApi } from '@/api/admin'
 import type { CatalogProduct, Category } from '@/types/catalog'
@@ -13,6 +14,25 @@ import { ApiError } from '@/api/client'
 import { hasAnyRole, useAuth } from '@/composables/useAuth'
 
 interface ProductPage { items: CatalogProduct[]; total: number; page: number; size: number; pages: number; has_next: boolean; has_prev: boolean }
+
+/* ---------- Kelas Tailwind yang dipakai berulang ---------- */
+const tagCls = 'inline-flex items-center whitespace-nowrap rounded-full border-[1.5px] border-ink bg-banner-sun px-2 text-[10.5px] font-bold leading-5 text-ink'
+const tagAltCls = 'inline-flex items-center whitespace-nowrap rounded-full border-[1.5px] border-ink bg-banner-sky px-2 text-[10.5px] font-bold leading-5 text-ink'
+const statusBase = 'inline-block whitespace-nowrap rounded-full border-2 border-ink px-2 py-0.5 text-[11px] font-bold text-ink'
+const resetBtnCls =
+  'inline-flex cursor-pointer items-center gap-1.5 rounded-xl border-2 border-ink bg-white px-3 py-1.5 font-body text-xs font-extrabold text-ink ' +
+  'shadow-[2px_2px_0_#1B2430] transition-[transform,box-shadow,background-color] duration-100 hover:bg-banner-sun ' +
+  'active:translate-x-0.5 active:translate-y-0.5 active:shadow-none'
+const rowActionCls = 'inline-flex cursor-pointer items-center gap-1 border-0 bg-transparent px-0.5 py-1 font-body text-[11px] font-bold text-ink hover:underline'
+
+function statusClass(value?: string) {
+  const tone = value === 'active' ? 'bg-mint' : value === 'draft' ? 'bg-sun' : 'bg-soft'
+  return `${statusBase} ${tone}`
+}
+function stockTone(value: number) {
+  return value === 0 ? 'text-destructive font-bold' : value <= 5 ? 'text-[#87620d] font-bold' : 'text-muted-foreground'
+}
+
 const rows = ref<CatalogProduct[]>([])
 const pageInfo = ref<ProductPage>({ items: [], total: 0, page: 1, size: 20, pages: 0, has_next: false, has_prev: false })
 const page = ref(1)
@@ -45,6 +65,38 @@ const showingRange = computed(() => {
 })
 const hasActiveFilters = computed(() => Boolean(search.value.trim()) || Boolean(statusFilter.value) || Boolean(typeFilter.value) || Boolean(animeFilter.value) || Boolean(categoryFilter.value) || sort.value !== 'newest')
 const activeFilterCount = computed(() => (statusFilter.value ? 1 : 0) + (typeFilter.value ? 1 : 0) + (animeFilter.value ? 1 : 0) + (categoryFilter.value ? 1 : 0) + (sort.value !== 'newest' ? 1 : 0))
+
+const typeSelectOptions = [
+  { value: '', label: 'Semua jenis' },
+  { value: 'imported', label: 'Impor' },
+  { value: 'handmade', label: 'Buatan tangan' },
+]
+
+const animeSelectOptions = computed(() => [
+  { value: '', label: 'Semua anime' },
+  ...animes.value.map((item) => ({ value: item.slug, label: item.name })),
+])
+
+const categorySelectOptions = computed(() => [
+  { value: '', label: 'Semua kategori' },
+  ...productCategories.value.map((item) => ({ value: item.slug, label: item.name })),
+])
+
+const statusSelectOptions = [
+  { value: '', label: 'Semua status' },
+  { value: 'active', label: 'Aktif' },
+  { value: 'draft', label: 'Draft' },
+  { value: 'archived', label: 'Diarsipkan' },
+]
+
+const sortSelectOptions = [
+  { value: 'newest', label: 'Terbaru' },
+  { value: 'oldest', label: 'Terlama' },
+  { value: 'price_asc', label: 'Harga terendah' },
+  { value: 'price_desc', label: 'Harga tertinggi' },
+  { value: 'best_seller', label: 'Terlaris' },
+  { value: 'name', label: 'Nama A–Z' },
+]
 
 let searchTimer: ReturnType<typeof setTimeout> | undefined
 function scheduleSearch() {
@@ -124,27 +176,32 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="admin-products-page">
+  <div class="max-sm:[&_.admin-page-header__actions]:w-full max-sm:[&_.admin-page-header__actions_.admin-button]:flex-1">
     <AdminPageHeader title="Produk" description="Kelola identitas katalog, harga, stok, status, dan gambar produk.">
       <AdminButton variant="primary" @click="createProduct"><Plus :size="16" /> Tambah produk</AdminButton>
     </AdminPageHeader>
 
-    <div v-if="error && !loading" class="admin-products-alert" role="alert">{{ error }}</div>
+    <div v-if="error && !loading" class="-mt-2.5 mb-4 rounded-xl border-2 border-ink bg-pinky px-3 py-2.5 text-sm font-bold text-ink" role="alert">{{ error }}</div>
 
-    <section class="admin-panel admin-products-panel" aria-label="Katalog produk">
-      <header class="admin-panel__header admin-products-panel__head">
+    <section class="admin-panel overflow-hidden" aria-label="Katalog produk">
+      <header class="admin-panel__header">
         <div>
-          <h2>Katalog produk</h2>
-          <p aria-live="polite">{{ loading && !rows.length ? 'Memuat…' : showingRange }}</p>
+          <h2 class="font-head text-base font-bold">Katalog produk</h2>
+          <p class="mt-0.5 text-xs text-muted-foreground" aria-live="polite">{{ loading && !rows.length ? 'Memuat…' : showingRange }}</p>
         </div>
         <AdminButton variant="quiet" aria-label="Muat ulang katalog" :disabled="loading" @click="load(page)">
-          <RefreshCw :size="16" :class="{ 'is-spinning': loading }" />
+          <RefreshCw :size="16" :class="{ 'animate-spin': loading }" />
         </AdminButton>
       </header>
 
-      <form class="admin-product-toolbar" role="search" @submit.prevent="runSearch">
-        <div class="admin-product-search">
-          <Search :size="16" aria-hidden="true" class="admin-product-search__icon" />
+      <!-- Toolbar -->
+      <form
+        class="flex flex-wrap items-center gap-2 border-y-2 border-ink/10 bg-bg px-4 py-3.5 max-md:gap-2.5 max-md:p-3"
+        role="search"
+        @submit.prevent="runSearch"
+      >
+        <div class="flex h-[38px] max-w-[380px] flex-[1_1_260px] items-center gap-2 rounded-xl border-2 border-ink bg-white pr-1.5 pl-3 text-muted-foreground focus-within:bg-[#fffaf0] max-md:h-[42px] max-md:max-w-none max-md:basis-full">
+          <Search :size="16" aria-hidden="true" class="shrink-0" />
           <label class="sr-only" for="admin-product-search">Cari nama, SKU, slug, atau deskripsi</label>
           <input
             id="admin-product-search"
@@ -153,144 +210,179 @@ onMounted(() => {
             autocomplete="off"
             enterkeyhint="search"
             placeholder="Cari nama, SKU, atau slug"
+            class="h-full w-full min-w-0 flex-1 border-0 bg-transparent p-0 font-body text-sm text-ink outline-none focus-visible:outline-none [&::-webkit-search-cancel-button]:hidden"
             @input="scheduleSearch"
           />
-          <button v-if="search" type="button" class="admin-product-search__clear" aria-label="Hapus pencarian" @click="clearSearch">
+          <button
+            v-if="search"
+            type="button"
+            class="grid size-6 shrink-0 cursor-pointer place-items-center rounded-full border-0 bg-soft text-ink hover:bg-sun"
+            aria-label="Hapus pencarian"
+            @click="clearSearch"
+          >
             <X :size="14" />
           </button>
         </div>
 
         <button
           type="button"
-          class="admin-product-filter-toggle"
-          :class="{ 'is-active': filtersOpen || activeFilterCount > 0 }"
+          class="inline-flex h-10 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl border-2 border-ink px-3 font-body text-xs font-extrabold text-ink shadow-[2px_2px_0_#1B2430] md:hidden"
+          :class="filtersOpen || activeFilterCount > 0 ? 'bg-banner-sun' : 'bg-white'"
           :aria-expanded="filtersOpen"
           aria-controls="admin-product-filters"
           @click="filtersOpen = !filtersOpen"
         >
           <SlidersHorizontal :size="15" /> Filter
-          <span v-if="activeFilterCount" class="admin-product-filter-count">{{ activeFilterCount }}</span>
+          <span v-if="activeFilterCount" class="grid h-[18px] min-w-[18px] place-items-center rounded-full bg-ink px-1.5 text-[10px] font-extrabold text-white">{{ activeFilterCount }}</span>
         </button>
 
-        <div id="admin-product-filters" class="admin-product-filters" :class="{ 'is-open': filtersOpen }">
-          <label class="admin-product-filter">
-            <span class="admin-product-filter__label">Jenis</span>
-            <select v-model="typeFilter" aria-label="Filter jenis produk" @change="runSearch">
-              <option value="">Semua jenis</option>
-              <option value="imported">Impor</option>
-              <option value="handmade">Buatan tangan</option>
-            </select>
-          </label>
-          <label class="admin-product-filter">
-            <span class="admin-product-filter__label">Anime</span>
-            <select v-model="animeFilter" aria-label="Filter seri anime" @change="runSearch">
-              <option value="">Semua anime</option>
-              <option v-for="item in animes" :key="item.id" :value="item.slug">{{ item.name }}</option>
-            </select>
-          </label>
-          <label class="admin-product-filter">
-            <span class="admin-product-filter__label">Jenis produk</span>
-            <select v-model="categoryFilter" aria-label="Filter jenis produk" @change="runSearch">
-              <option value="">Semua kategori</option>
-              <option v-for="item in productCategories" :key="item.id" :value="item.slug">{{ item.name }}</option>
-            </select>
-          </label>
-          <label class="admin-product-filter">
-            <span class="admin-product-filter__label">Status</span>
-            <select v-model="statusFilter" aria-label="Filter status katalog" @change="runSearch">
-              <option value="">Semua status</option>
-              <option value="active">Aktif</option>
-              <option value="draft">Draft</option>
-              <option value="archived">Diarsipkan</option>
-            </select>
-          </label>
-          <label class="admin-product-filter admin-product-sort">
-            <span class="admin-product-filter__label">Urutkan</span>
-            <select v-model="sort" aria-label="Urutkan produk" @change="runSearch">
-              <option value="newest">Terbaru</option>
-              <option value="oldest">Terlama</option>
-              <option value="price_asc">Harga terendah</option>
-              <option value="price_desc">Harga tertinggi</option>
-              <option value="best_seller">Terlaris</option>
-              <option value="name">Nama A–Z</option>
-            </select>
-          </label>
-          <button v-if="hasActiveFilters" type="button" class="admin-product-reset" @click="resetFilters">
+        <div
+          id="admin-product-filters"
+          class="items-center gap-2 md:flex lg:ml-auto"
+          :class="filtersOpen ? 'max-md:grid max-md:w-full max-md:grid-cols-2 max-md:gap-2.5' : 'max-md:hidden'"
+        >
+          <div class="flex min-w-[130px] flex-col max-md:min-w-0">
+            <span class="sr-only max-md:not-sr-only max-md:mb-1 max-md:ml-0.5 max-md:text-[11px] max-md:font-bold max-md:text-muted-foreground">Jenis</span>
+            <AppSelect v-model="typeFilter" :options="typeSelectOptions" variant="admin" size="sm" aria-label="Filter jenis produk" @change="runSearch" />
+          </div>
+          <div class="flex min-w-[150px] flex-col max-md:min-w-0">
+            <span class="sr-only max-md:not-sr-only max-md:mb-1 max-md:ml-0.5 max-md:text-[11px] max-md:font-bold max-md:text-muted-foreground">Anime</span>
+            <AppSelect v-model="animeFilter" :options="animeSelectOptions" variant="admin" size="sm" searchable aria-label="Filter seri anime" @change="runSearch" />
+          </div>
+          <div class="flex min-w-[150px] flex-col max-md:min-w-0">
+            <span class="sr-only max-md:not-sr-only max-md:mb-1 max-md:ml-0.5 max-md:text-[11px] max-md:font-bold max-md:text-muted-foreground">Jenis produk</span>
+            <AppSelect v-model="categoryFilter" :options="categorySelectOptions" variant="admin" size="sm" searchable aria-label="Filter jenis produk" @change="runSearch" />
+          </div>
+          <div class="flex min-w-[130px] flex-col max-md:min-w-0">
+            <span class="sr-only max-md:not-sr-only max-md:mb-1 max-md:ml-0.5 max-md:text-[11px] max-md:font-bold max-md:text-muted-foreground">Status</span>
+            <AppSelect v-model="statusFilter" :options="statusSelectOptions" variant="admin" size="sm" aria-label="Filter status katalog" @change="runSearch" />
+          </div>
+          <div class="flex min-w-[140px] flex-col max-md:col-span-full max-md:min-w-0">
+            <span class="sr-only max-md:not-sr-only max-md:mb-1 max-md:ml-0.5 max-md:text-[11px] max-md:font-bold max-md:text-muted-foreground">Urutkan</span>
+            <AppSelect v-model="sort" :options="sortSelectOptions" variant="admin" size="sm" aria-label="Urutkan produk" @change="runSearch" />
+          </div>
+          <button
+            v-if="hasActiveFilters"
+            type="button"
+            class="inline-flex h-[38px] cursor-pointer items-center gap-1.5 rounded-xl border-2 border-dashed border-ink/50 bg-transparent px-2.5 font-body text-xs font-extrabold text-ink hover:bg-banner-sun max-md:col-span-full max-md:justify-center"
+            @click="resetFilters"
+          >
             <RotateCcw :size="13" /> Reset
           </button>
         </div>
       </form>
 
+      <!-- State -->
       <AdminState v-if="loading && !rows.length" kind="loading" message="Memuat produk…" />
       <AdminState v-else-if="error && !rows.length" kind="error" :message="error" @retry="load(page)" />
-      <div v-else-if="!rows.length" class="admin-products-empty">
+      <div v-else-if="!rows.length" class="flex min-h-48 flex-col items-center justify-center gap-1.5 px-[18px] py-6 text-center text-muted-foreground">
         <Boxes :size="22" />
-        <strong>{{ hasActiveFilters ? 'Tidak ada produk yang cocok' : 'Belum ada produk' }}</strong>
-        <span>{{ hasActiveFilters ? 'Coba kata kunci lain atau reset filter.' : 'Tambahkan produk pertama untuk mulai berjualan.' }}</span>
-        <button v-if="hasActiveFilters" type="button" class="admin-products-empty__reset" @click="resetFilters">
+        <strong class="font-head text-sm font-semibold text-ink">{{ hasActiveFilters ? 'Tidak ada produk yang cocok' : 'Belum ada produk' }}</strong>
+        <span class="text-xs">{{ hasActiveFilters ? 'Coba kata kunci lain atau reset filter.' : 'Tambahkan produk pertama untuk mulai berjualan.' }}</span>
+        <button v-if="hasActiveFilters" type="button" :class="[resetBtnCls, 'mt-2']" @click="resetFilters">
           <RotateCcw :size="13" /> Reset pencarian &amp; filter
         </button>
-        <AdminButton v-else variant="secondary" @click="createProduct"><Plus :size="15" /> Tambah produk</AdminButton>
+        <AdminButton v-else variant="secondary" class="mt-2!" @click="createProduct"><Plus :size="15" /> Tambah produk</AdminButton>
       </div>
 
       <template v-else>
-        <div class="admin-product-results" :class="{ 'is-refreshing': loading }" :aria-busy="loading">
+        <div
+          class="transition-opacity duration-150 max-md:[&_.admin-table-wrap]:hidden [&_.admin-table_td]:py-3 [&_.admin-table_th]:py-[11px] [&_.admin-table_th:last-child]:w-[116px]"
+          :class="loading ? 'pointer-events-none opacity-55' : ''"
+          :aria-busy="loading"
+        >
           <AdminDataTable :columns="columns" :rows="rows" row-key="id">
             <template #name="{ row }">
-              <span class="admin-product-name"><strong>{{ row.name }}</strong><small>{{ row.description || 'Belum ada deskripsi' }}</small><small class="admin-product-name__meta">{{ row.slug || 'Slug dibuat otomatis' }}<i>·</i>{{ row.images?.length || 0 }} gambar</small></span>
+              <span class="flex min-w-[195px] flex-col">
+                <strong class="block max-w-60 truncate text-[13px]">{{ row.name }}</strong>
+                <small class="mt-0.5 block max-w-[270px] truncate text-[11px] text-muted-foreground">{{ row.description || 'Belum ada deskripsi' }}</small>
+                <small class="mt-0.5 block truncate text-[11px] text-muted-foreground">{{ row.slug || 'Slug dibuat otomatis' }}<i class="px-1.5 not-italic text-ink/40">·</i>{{ row.images?.length || 0 }} gambar</small>
+              </span>
             </template>
-            <template #sku="{ row }"><span class="admin-product-sku">{{ row.sku || '—' }}</span></template>
-            <template #product_type="{ row }"><span class="admin-product-type">{{ typeLabel(row.product_type) }}</span></template>
+            <template #sku="{ row }"><span class="font-mono text-xs text-ink/70">{{ row.sku || '—' }}</span></template>
+            <template #product_type="{ row }"><span class="whitespace-nowrap text-xs text-ink/70">{{ typeLabel(row.product_type) }}</span></template>
             <template #taxonomy="{ row }">
-              <span v-if="row.anime || row.category" class="admin-product-taxonomy">
-                <span v-if="row.anime" class="admin-product-tag">{{ row.anime.name }}</span>
-                <span v-if="row.category" class="admin-product-tag admin-product-tag--alt">{{ row.category.name }}</span>
+              <span v-if="row.anime || row.category" class="inline-flex max-w-48 flex-wrap gap-1">
+                <span v-if="row.anime" :class="tagCls">{{ row.anime.name }}</span>
+                <span v-if="row.category" :class="tagAltCls">{{ row.category.name }}</span>
               </span>
               <span v-else class="admin-cell-sub">Belum diatur</span>
             </template>
-            <template #price="{ row }"><span class="admin-product-number">{{ price(row.price) }}</span></template>
-            <template #stock="{ row }"><span class="admin-stock" :class="{ 'is-low': row.stock <= 5, 'is-out': row.stock === 0 }"><b>{{ Number(row.stock).toLocaleString('id-ID') }}</b><small>{{ stockLabel(row.stock) }}</small></span></template>
-            <template #sold_count="{ row }"><span class="admin-product-number">{{ Number(row.sold_count || 0).toLocaleString('id-ID') }}</span></template>
-            <template #status="{ row }"><span class="admin-product-status" :data-status="row.status">{{ statusLabel(row.status) }}</span><small class="admin-cell-sub">{{ updatedAt(row.updated_at) }}</small></template>
-            <template #actions="{ row }"><div class="admin-product-actions"><button type="button" class="admin-product-action" @click="editProduct(row)"><Pencil :size="14" /><span>Edit</span></button><button v-if="canDelete" type="button" class="admin-product-action admin-product-action--danger" @click="removeProduct(row)"><span>Hapus</span></button></div></template>
+            <template #price="{ row }"><span class="whitespace-nowrap text-xs tabular-nums">{{ price(row.price) }}</span></template>
+            <template #stock="{ row }">
+              <span class="inline-flex min-w-14 flex-col items-end leading-tight">
+                <b class="text-[13px] tabular-nums">{{ Number(row.stock).toLocaleString('id-ID') }}</b>
+                <small class="text-[10px]" :class="stockTone(row.stock)">{{ stockLabel(row.stock) }}</small>
+              </span>
+            </template>
+            <template #sold_count="{ row }"><span class="whitespace-nowrap text-xs tabular-nums">{{ Number(row.sold_count || 0).toLocaleString('id-ID') }}</span></template>
+            <template #status="{ row }">
+              <span :class="statusClass(row.status)">{{ statusLabel(row.status) }}</span>
+              <small class="admin-cell-sub mt-1 text-[10px]">{{ updatedAt(row.updated_at) }}</small>
+            </template>
+            <template #actions="{ row }">
+              <div class="flex items-center justify-end gap-2">
+                <button type="button" :class="rowActionCls" @click="editProduct(row)"><Pencil :size="14" /><span>Edit</span></button>
+                <button v-if="canDelete" type="button" :class="[rowActionCls, 'text-destructive']" @click="removeProduct(row)"><span>Hapus</span></button>
+              </div>
+            </template>
           </AdminDataTable>
 
-          <div class="admin-product-cards">
-            <article v-for="product in rows" :key="product.id" class="admin-product-card">
-              <header class="admin-product-card__head">
-                <div class="admin-product-card__title">
-                  <strong>{{ product.name }}</strong>
-                  <span class="admin-product-card__meta">{{ product.sku || 'Tanpa SKU' }} · {{ typeLabel(product.product_type) }}</span>
-                  <span v-if="product.anime || product.category" class="admin-product-taxonomy admin-product-taxonomy--card">
-                    <span v-if="product.anime" class="admin-product-tag">{{ product.anime.name }}</span>
-                    <span v-if="product.category" class="admin-product-tag admin-product-tag--alt">{{ product.category.name }}</span>
+          <!-- Kartu produk: hanya di layar kecil -->
+          <div class="grid gap-3 p-3 md:hidden">
+            <article
+              v-for="product in rows"
+              :key="product.id"
+              class="rounded-2xl border-2 border-ink bg-white p-3.5 shadow-[3px_3px_0_#1B2430]"
+            >
+              <header class="flex items-start justify-between gap-2.5">
+                <div class="min-w-0">
+                  <strong class="block text-[13.5px] font-extrabold leading-snug">{{ product.name }}</strong>
+                  <span class="mt-0.5 block break-words font-mono text-[10.5px] text-muted-foreground">{{ product.sku || 'Tanpa SKU' }} · {{ typeLabel(product.product_type) }}</span>
+                  <span v-if="product.anime || product.category" class="mt-1.5 inline-flex flex-wrap gap-1">
+                    <span v-if="product.anime" :class="tagCls">{{ product.anime.name }}</span>
+                    <span v-if="product.category" :class="tagAltCls">{{ product.category.name }}</span>
                   </span>
                 </div>
-                <span class="admin-product-status" :data-status="product.status">{{ statusLabel(product.status) }}</span>
+                <span :class="statusClass(product.status)">{{ statusLabel(product.status) }}</span>
               </header>
 
-              <dl class="admin-product-card__stats">
-                <div><dt>Harga</dt><dd>{{ price(product.price) }}</dd></div>
-                <div>
-                  <dt>Stok</dt>
-                  <dd><span class="admin-stock admin-stock--card" :class="{ 'is-low': product.stock <= 5, 'is-out': product.stock === 0 }"><b>{{ Number(product.stock).toLocaleString('id-ID') }}</b><small>{{ stockLabel(product.stock) }}</small></span></dd>
+              <dl class="mt-3 grid grid-cols-3 gap-2 border-y-2 border-dashed border-ink/20 py-2.5">
+                <div class="min-w-0">
+                  <dt class="text-[11px] font-bold text-muted-foreground">Harga</dt>
+                  <dd class="m-0 mt-0.5 truncate text-xs font-extrabold tabular-nums">{{ price(product.price) }}</dd>
                 </div>
-                <div><dt>Terjual</dt><dd>{{ Number(product.sold_count || 0).toLocaleString('id-ID') }}</dd></div>
+                <div class="min-w-0">
+                  <dt class="text-[11px] font-bold text-muted-foreground">Stok</dt>
+                  <dd class="m-0 mt-0.5 text-xs font-extrabold tabular-nums">
+                    <span class="inline-flex flex-col items-start leading-tight">
+                      <b>{{ Number(product.stock).toLocaleString('id-ID') }}</b>
+                      <small class="text-[10px] font-bold" :class="stockTone(product.stock)">{{ stockLabel(product.stock) }}</small>
+                    </span>
+                  </dd>
+                </div>
+                <div class="min-w-0">
+                  <dt class="text-[11px] font-bold text-muted-foreground">Terjual</dt>
+                  <dd class="m-0 mt-0.5 truncate text-xs font-extrabold tabular-nums">{{ Number(product.sold_count || 0).toLocaleString('id-ID') }}</dd>
+                </div>
               </dl>
 
-              <footer class="admin-product-card__actions">
-                <AdminButton variant="secondary" @click="editProduct(product)"><Pencil :size="14" /> Edit</AdminButton>
-                <AdminButton v-if="canDelete" variant="secondary" @click="removeProduct(product)"><Trash2 :size="14" /> Hapus</AdminButton>
+              <footer class="mt-3 flex gap-2">
+                <AdminButton variant="secondary" class="h-9! flex-1!" @click="editProduct(product)"><Pencil :size="14" /> Edit</AdminButton>
+                <AdminButton v-if="canDelete" variant="secondary" class="h-9! flex-1!" @click="removeProduct(product)"><Trash2 :size="14" /> Hapus</AdminButton>
               </footer>
             </article>
           </div>
         </div>
 
-        <footer v-if="pageInfo.pages > 1" class="admin-product-pagination">
+        <footer
+          v-if="pageInfo.pages > 1"
+          class="flex items-center justify-between border-t-2 border-ink/10 px-4 py-3 text-xs text-muted-foreground max-md:flex-col max-md:items-stretch max-md:gap-2.5 max-md:p-3"
+        >
           <span>Halaman {{ pageInfo.page }} dari {{ pageInfo.pages }}</span>
-          <div>
-            <AdminButton variant="secondary" :disabled="!pageInfo.has_prev || loading" @click="load(pageInfo.page - 1)"><ChevronLeft :size="15" /> Sebelumnya</AdminButton>
-            <AdminButton variant="secondary" :disabled="!pageInfo.has_next || loading" @click="load(pageInfo.page + 1)">Berikutnya <ChevronRight :size="15" /></AdminButton>
+          <div class="flex gap-2 max-md:grid max-md:w-full max-md:grid-cols-2">
+            <AdminButton variant="secondary" class="h-[33px]! text-xs! max-md:w-full! max-md:px-2!" :disabled="!pageInfo.has_prev || loading" @click="load(pageInfo.page - 1)"><ChevronLeft :size="15" /> Sebelumnya</AdminButton>
+            <AdminButton variant="secondary" class="h-[33px]! text-xs! max-md:w-full! max-md:px-2!" :disabled="!pageInfo.has_next || loading" @click="load(pageInfo.page + 1)">Berikutnya <ChevronRight :size="15" /></AdminButton>
           </div>
         </footer>
       </template>
@@ -299,670 +391,3 @@ onMounted(() => {
     <AdminProductForm v-model="formOpen" :product="selectedProduct" @saved="load(page)" />
   </div>
 </template>
-
-<style scoped>
-/* ---------- Panel & toolbar ---------- */
-.admin-products-panel {
-  overflow: hidden;
-}
-
-.admin-products-panel__head {
-  padding: 15px 18px;
-}
-
-.admin-products-panel__head h2 {
-  font-size: 16px;
-}
-
-.admin-products-panel__head p {
-  margin: 3px 0 0;
-  color: #68717b;
-  font-size: 12px;
-}
-
-.admin-product-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 13px 16px;
-  border-bottom: 1px solid #e8e5dd;
-  background: #fdfcf8;
-}
-
-.admin-product-search {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1 1 260px;
-  max-width: 380px;
-  height: 38px;
-  padding: 0 6px 0 11px;
-  border: 1px solid #ddd9ce;
-  border-radius: 8px;
-  background: #fff;
-  color: #69727c;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-
-.admin-product-search:focus-within {
-  border-color: #c4a24a;
-  box-shadow: 0 0 0 3px #f6e6b3;
-  outline: none;
-}
-
-.admin-product-search__icon {
-  flex: none;
-}
-
-.admin-product-search input {
-  flex: 1;
-  width: 100%;
-  min-width: 0;
-  height: 100%;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: #1b2430;
-  font: 400 13px var(--font-body);
-}
-
-.admin-product-search input::-webkit-search-cancel-button {
-  display: none;
-}
-
-.admin-product-search__clear {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 24px;
-  height: 24px;
-  border: 0;
-  border-radius: 999px;
-  background: #efece4;
-  color: #5f6770;
-  cursor: pointer;
-}
-
-.admin-product-search__clear:hover {
-  background: #e6e1d5;
-  color: #1b2430;
-}
-
-.admin-product-filter-toggle {
-  display: none;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  height: 38px;
-  padding: 0 12px;
-  border: 1px solid #ddd9ce;
-  border-radius: 8px;
-  background: #fff;
-  color: #3f4852;
-  font: 700 12.5px var(--font-body);
-  cursor: pointer;
-}
-
-.admin-product-filter-toggle.is-active {
-  border-color: #d9bf7c;
-  background: #fff6dc;
-  color: #6b4a00;
-}
-
-.admin-product-filter-count {
-  display: grid;
-  place-items: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: #1b2430;
-  color: #fff;
-  font-size: 10px;
-  font-weight: 800;
-}
-
-.admin-product-filters {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-}
-
-.admin-product-filter {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-
-.admin-product-filter__label {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-.admin-product-filter select {
-  height: 38px;
-  max-width: 160px;
-  padding: 0 28px 0 10px;
-  border: 1px solid #ddd9ce;
-  border-radius: 8px;
-  background: #fff;
-  color: #3f4852;
-  font: 600 12px var(--font-body);
-}
-
-.admin-product-filter select:focus-visible {
-  outline: 3px solid #f1d98f;
-  outline-offset: 1px;
-}
-
-.admin-product-sort {
-  margin-left: 0;
-}
-
-.admin-product-reset {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 38px;
-  padding: 0 9px;
-  border: 1px dashed #d5c6a2;
-  border-radius: 8px;
-  background: transparent;
-  color: #7c6220;
-  font: 700 11.5px var(--font-body);
-  cursor: pointer;
-}
-
-.admin-product-reset:hover {
-  background: #fff6dc;
-  border-color: #d9bf7c;
-}
-
-/* ---------- Hasil & tabel ---------- */
-.admin-product-results {
-  transition: opacity 0.15s ease;
-}
-
-.admin-product-results.is-refreshing {
-  opacity: 0.55;
-  pointer-events: none;
-}
-
-.admin-products-page :deep(.admin-table th) {
-  padding-top: 11px;
-  padding-bottom: 11px;
-}
-
-.admin-products-page :deep(.admin-table td) {
-  padding-top: 12px;
-  padding-bottom: 12px;
-}
-
-.admin-products-page :deep(.admin-table th:last-child) {
-  width: 116px;
-}
-
-.admin-product-name {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  min-width: 195px;
-}
-
-.admin-product-name strong {
-  display: block;
-  max-width: 240px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-}
-
-.admin-product-name small {
-  display: block;
-  max-width: 270px;
-  margin-top: 3px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: #737b84;
-  font-size: 11px;
-}
-
-.admin-product-name small i {
-  padding: 0 5px;
-  color: #aa9d83;
-  font-style: normal;
-}
-
-.admin-product-name .admin-product-name__meta {
-  max-width: none;
-}
-
-.admin-product-sku {
-  font: 500 12px ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: #4e5863;
-}
-
-.admin-product-type {
-  font-size: 12px;
-  color: #58616a;
-  white-space: nowrap;
-}
-
-.admin-product-taxonomy {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  max-width: 190px;
-}
-
-.admin-product-taxonomy--card {
-  margin-top: 5px;
-  max-width: none;
-}
-
-.admin-product-tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 7px;
-  border: 1px solid #e2d6b4;
-  border-radius: 999px;
-  background: #fff8e4;
-  color: #6b5200;
-  font-size: 10.5px;
-  font-weight: 700;
-  line-height: 1.6;
-  white-space: nowrap;
-}
-
-.admin-product-tag--alt {
-  border-color: #d5dedb;
-  background: #f1f6f4;
-  color: #3c5a50;
-}
-
-.admin-product-number {
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.admin-stock {
-  display: inline-flex;
-  min-width: 58px;
-  flex-direction: column;
-  align-items: flex-end;
-  line-height: 1.25;
-}
-
-.admin-stock b {
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-}
-
-.admin-stock small {
-  font-size: 10px;
-  color: #788079;
-}
-
-.admin-stock.is-low small {
-  color: #87620d;
-}
-
-.admin-stock.is-out small {
-  color: #994d41;
-}
-
-.admin-stock--card {
-  align-items: flex-start;
-}
-
-.admin-product-status {
-  display: inline-block;
-  border-radius: 999px;
-  padding: 3px 8px;
-  background: #eeece6;
-  color: #62615c;
-  font-size: 11px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.admin-product-status[data-status='active'] {
-  background: #e6f0e8;
-  color: #315b38;
-}
-
-.admin-product-status[data-status='draft'] {
-  background: #fff0c9;
-  color: #704f10;
-}
-
-.admin-product-status[data-status='archived'] {
-  background: #efeee9;
-  color: #59616a;
-}
-
-.admin-product-status + .admin-cell-sub {
-  display: block;
-  margin-top: 4px;
-  font-size: 10px;
-}
-
-.admin-product-actions {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 8px;
-}
-
-.admin-product-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 2px;
-  border: 0;
-  background: transparent;
-  color: #34414f;
-  font: 700 11px var(--font-body);
-  cursor: pointer;
-}
-
-.admin-product-action:hover {
-  text-decoration: underline;
-}
-
-.admin-product-action--danger {
-  color: #8b5449;
-}
-
-/* Kartu produk: hanya tampil di layar kecil */
-.admin-product-cards {
-  display: none;
-}
-
-/* ---------- Empty state ---------- */
-.admin-products-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  min-height: 190px;
-  padding: 24px 18px;
-  color: #69727c;
-  text-align: center;
-}
-
-.admin-products-empty strong {
-  font: 600 14px var(--font-head);
-  color: #34404d;
-}
-
-.admin-products-empty span {
-  font-size: 12px;
-}
-
-.admin-products-empty__reset {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-top: 8px;
-  padding: 6px 11px;
-  border: 1px solid #ddd9ce;
-  border-radius: 7px;
-  background: #fff;
-  color: #5d461a;
-  font: 700 12px var(--font-body);
-  cursor: pointer;
-}
-
-.admin-products-empty :deep(.admin-button) {
-  margin-top: 8px;
-}
-
-/* ---------- Pagination & alert ---------- */
-.admin-product-pagination {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  border-top: 1px solid #e8e5dd;
-  color: #68717b;
-  font-size: 12px;
-}
-
-.admin-product-pagination > div {
-  display: flex;
-  gap: 8px;
-}
-
-.admin-product-pagination :deep(.admin-button) {
-  height: 33px;
-  font-size: 12px;
-}
-
-.admin-products-alert {
-  margin: -10px 0 16px;
-  padding: 10px 12px;
-  border: 1px solid #e6c8c2;
-  border-radius: 7px;
-  background: #fbefec;
-  color: #8a453a;
-  font-size: 13px;
-}
-
-.is-spinning {
-  animation: admin-product-spin 0.8s linear infinite;
-}
-
-@keyframes admin-product-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* ---------- Responsif ---------- */
-@media (max-width: 900px) {
-  .admin-product-filters {
-    margin-left: 0;
-  }
-}
-
-@media (max-width: 780px) {
-  .admin-product-toolbar {
-    gap: 9px;
-    padding: 12px;
-  }
-
-  .admin-product-search {
-    flex-basis: 100%;
-    max-width: none;
-    height: 42px;
-  }
-
-  .admin-product-filter-toggle {
-    display: inline-flex;
-    flex: 1;
-    height: 40px;
-  }
-
-  .admin-product-filters {
-    display: none;
-    width: 100%;
-    grid-template-columns: 1fr 1fr;
-    gap: 9px;
-  }
-
-  .admin-product-filters.is-open {
-    display: grid;
-  }
-
-  .admin-product-filter {
-    min-width: 0;
-  }
-
-  .admin-product-filter__label {
-    position: static;
-    width: auto;
-    height: auto;
-    margin: 0 0 4px 2px;
-    overflow: visible;
-    clip: auto;
-    font-size: 10px;
-    font-weight: 800;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    color: #8a9198;
-  }
-
-  .admin-product-filter select {
-    width: 100%;
-    max-width: none;
-    height: 40px;
-  }
-
-  .admin-product-sort,
-  .admin-product-reset {
-    grid-column: 1 / -1;
-  }
-
-  .admin-product-reset {
-    justify-content: center;
-    height: 38px;
-  }
-
-  /* Sembunyikan tabel, tampilkan kartu */
-  .admin-product-results :deep(.admin-table-wrap) {
-    display: none;
-  }
-
-  .admin-product-cards {
-    display: grid;
-    gap: 10px;
-    padding: 12px;
-  }
-
-  .admin-product-card {
-    padding: 13px;
-    border: 1px solid #e5e1d7;
-    border-radius: 10px;
-    background: #fff;
-    box-shadow: 0 1px 2px #1b24300a;
-  }
-
-  .admin-product-card__head {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 10px;
-  }
-
-  .admin-product-card__title {
-    min-width: 0;
-  }
-
-  .admin-product-card__title strong {
-    display: block;
-    font-size: 13.5px;
-    font-weight: 800;
-    line-height: 1.35;
-  }
-
-  .admin-product-card__meta {
-    display: block;
-    margin-top: 3px;
-    overflow-wrap: anywhere;
-    color: #7a8289;
-    font: 500 10.5px ui-monospace, SFMono-Regular, Menlo, monospace;
-  }
-
-  .admin-product-card__stats {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
-    margin: 11px 0 0;
-    padding: 10px 0;
-    border-top: 1px dashed #ece7dc;
-    border-bottom: 1px dashed #ece7dc;
-  }
-
-  .admin-product-card__stats div {
-    min-width: 0;
-  }
-
-  .admin-product-card__stats dt {
-    color: #8a9198;
-    font-size: 9.5px;
-    font-weight: 800;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-  }
-
-  .admin-product-card__stats dd {
-    margin: 3px 0 0;
-    overflow: hidden;
-    color: #2c3742;
-    font-size: 12px;
-    font-weight: 800;
-    font-variant-numeric: tabular-nums;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .admin-product-card__stats .admin-stock small {
-    font-weight: 700;
-  }
-
-  .admin-product-card__actions {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    margin-top: 11px;
-  }
-
-  .admin-product-card__actions :deep(.admin-button) {
-    width: 100%;
-    height: 36px;
-  }
-
-  .admin-product-pagination {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-    padding: 12px;
-  }
-
-  .admin-product-pagination > div {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    width: 100%;
-  }
-
-  .admin-product-pagination :deep(.admin-button) {
-    width: 100%;
-    padding: 0 9px;
-  }
-}
-
-@media (max-width: 560px) {
-  .admin-products-page :deep(.admin-page-header__actions) {
-    width: 100%;
-  }
-
-  .admin-products-page :deep(.admin-page-header__actions .admin-button) {
-    flex: 1;
-  }
-}
-</style>

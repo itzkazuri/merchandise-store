@@ -4,6 +4,7 @@ import { ImagePlus, Loader2, RefreshCw, Trash2, Upload } from 'lucide-vue-next'
 import AdminDialog from '@/components/ui/AdminDialog.vue'
 import AdminButton from '@/components/ui/AdminButton.vue'
 import AdminState from '@/components/ui/AdminState.vue'
+import AppSelect from '@/components/ui/AppSelect.vue'
 import { adminApi } from '@/api/admin'
 import { ApiError } from '@/api/client'
 import { imageUrl, optimizedImageUrl } from '@/lib/productVisual'
@@ -11,6 +12,21 @@ import type { CatalogImage, CatalogProduct, Category } from '@/types/catalog'
 
 interface ProductDraft { name: string; slug: string; sku: string; description: string; product_type: 'imported' | 'handmade'; price: string; stock: number; status: 'draft' | 'active' | 'archived'; anime_id: number | null; category_id: number | null }
 interface ImageDraft { key: string; id?: number; object_key: string; url?: string; preview_url?: string; alt_text: string; is_primary: boolean; sort_order: number; existing: boolean; uploading?: boolean }
+
+/* ---------- Kelas Tailwind yang dipakai berulang ---------- */
+const inputCls =
+  'h-10 w-full min-w-0 rounded-xl border-2 border-ink bg-white px-3 font-body text-sm text-ink ' +
+  'placeholder:text-muted-foreground read-only:bg-muted read-only:text-muted-foreground focus:bg-[#fffaf0]'
+const textareaCls =
+  'w-full min-w-0 resize-y rounded-xl border-2 border-ink bg-white px-3 py-2 font-body text-sm leading-normal text-ink ' +
+  'placeholder:text-muted-foreground focus:bg-[#fffaf0]'
+const linkCls =
+  'inline-flex cursor-pointer items-center gap-1 border-0 bg-transparent p-0 font-body text-[11px] font-bold text-ink ' +
+  'underline underline-offset-2 hover:text-ink/60 disabled:cursor-not-allowed disabled:opacity-45'
+const gridCls = 'grid grid-cols-1 gap-x-4 gap-y-3.5 sm:grid-cols-3'
+const sectionCls = 'grid gap-3.5 not-first:border-t-2 not-first:border-ink/10 not-first:pt-5'
+const headTitleCls = 'm-0 font-head text-[15px] font-semibold tracking-tight'
+const headDescCls = 'mt-1 mb-0 text-xs leading-normal text-muted-foreground'
 
 const IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,image/avif'
 const MAX_IMAGE_MB = 5
@@ -35,6 +51,33 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const replaceTargetKey = ref<string | null>(null)
 const uploadingCount = ref(0)
 const isUploading = computed(() => uploadingCount.value > 0)
+
+const productTypeOptions: { value: 'imported' | 'handmade'; label: string }[] = [
+  { value: 'imported', label: 'Produk impor' },
+  { value: 'handmade', label: 'Buatan tangan' },
+]
+
+const animeOptions = computed(() => [
+  { value: null as number | null, label: 'Belum diatur' },
+  ...animes.value.map((item) => ({
+    value: item.id,
+    label: `${item.name}${item.is_active ? '' : ' (nonaktif)'}`,
+  })),
+])
+
+const categoryOptions = computed(() => [
+  { value: null as number | null, label: 'Belum diatur' },
+  ...productCategories.value.map((item) => ({
+    value: item.id,
+    label: `${item.name}${item.is_active ? '' : ' (nonaktif)'}`,
+  })),
+])
+
+const statusOptions: { value: 'draft' | 'active' | 'archived'; label: string }[] = [
+  { value: 'draft', label: 'Draft' },
+  { value: 'active', label: 'Aktif' },
+  { value: 'archived', label: 'Diarsipkan' },
+]
 
 async function loadCategories() {
   if (categoriesLoading.value) return
@@ -260,124 +303,118 @@ async function submit() {
 
 <template>
   <AdminDialog :model-value="modelValue" :title="isEditing ? 'Edit produk' : 'Tambah produk'" description="Lengkapi informasi katalog dan stok produk." @update:model-value="emit('update:modelValue', $event)">
-    <form id="admin-product-form" class="product-form" @submit.prevent="submit">
-      <section class="product-form__section">
-        <header class="product-form__head">
-          <h3>Informasi produk</h3>
-          <p>Nama, SKU, jenis produk, dan deskripsi yang dilihat pelanggan.</p>
+    <form id="admin-product-form" class="grid gap-[22px]" @submit.prevent="submit">
+      <!-- Informasi produk -->
+      <section :class="sectionCls">
+        <header>
+          <h3 :class="headTitleCls">Informasi produk</h3>
+          <p :class="headDescCls">Nama, SKU, jenis produk, dan deskripsi yang dilihat pelanggan.</p>
         </header>
-        <div class="product-form__grid">
-          <label class="admin-field product-form__full">
-            <span>Nama produk <b aria-hidden="true">*</b></span>
-            <input v-model.trim="draft.name" name="name" required minlength="2" maxlength="255" autocomplete="off" placeholder="Contoh: Figur Gojo Satoru 30 cm" />
+        <div :class="gridCls">
+          <label class="admin-field col-span-full">
+            <span class="admin-field__label">Nama produk <b class="text-destructive" aria-hidden="true">*</b></span>
+            <input v-model.trim="draft.name" name="name" required minlength="2" maxlength="255" autocomplete="off" placeholder="Contoh: Figur Gojo Satoru 30 cm" :class="inputCls" />
           </label>
+
           <div class="admin-field">
-            <label class="admin-field__label" for="product-sku">SKU <b aria-hidden="true">*</b> <small>{{ skuManual ? 'manual' : 'otomatis' }}</small></label>
-            <input id="product-sku" v-model.trim="draft.sku" name="sku" required maxlength="100" autocomplete="off" placeholder="FIG-GOJO-30" @input="skuManual = true" />
-            <span class="admin-field__tools">
-              <button type="button" class="admin-field__link" @click="toggleSkuMode"><RefreshCw :size="12" /> {{ skuManual ? 'Pakai SKU otomatis' : 'Acak ulang' }}</button>
-              <small class="admin-field__hint">{{ skuManual ? 'Kamu mengetik SKU sendiri.' : 'Dibuat dari nama produk.' }}</small>
+            <label class="admin-field__label" for="product-sku">
+              SKU <b class="text-destructive" aria-hidden="true">*</b>
+              <small class="font-medium text-muted-foreground">{{ skuManual ? 'manual' : 'otomatis' }}</small>
+            </label>
+            <input id="product-sku" v-model.trim="draft.sku" name="sku" required maxlength="100" autocomplete="off" placeholder="FIG-GOJO-30" :class="inputCls" @input="skuManual = true" />
+            <span class="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
+              <button type="button" :class="linkCls" @click="toggleSkuMode"><RefreshCw :size="12" /> {{ skuManual ? 'Pakai SKU otomatis' : 'Acak ulang' }}</button>
+              <small class="admin-field__hint mt-0!">{{ skuManual ? 'Kamu mengetik SKU sendiri.' : 'Dibuat dari nama produk.' }}</small>
             </span>
           </div>
+
           <label class="admin-field">
-            <span>Slug <small>opsional</small></span>
-            <input v-model.trim="draft.slug" name="slug" maxlength="255" autocomplete="off" placeholder="figur-gojo-satoru-30-cm" />
+            <span class="admin-field__label">Slug <small class="font-medium text-muted-foreground">opsional</small></span>
+            <input v-model.trim="draft.slug" name="slug" maxlength="255" autocomplete="off" placeholder="figur-gojo-satoru-30-cm" :class="inputCls" />
             <small class="admin-field__hint">Dibuat otomatis dari nama jika dikosongkan.</small>
           </label>
-          <label class="admin-field">
-            <span>Jenis produk <b aria-hidden="true">*</b></span>
-            <select v-model="draft.product_type" name="product_type" required>
-              <option value="imported">Produk impor</option>
-              <option value="handmade">Buatan tangan</option>
-            </select>
-          </label>
-          <label class="admin-field product-form__full">
-            <span>Deskripsi</span>
-            <textarea v-model="draft.description" name="description" rows="4" placeholder="Bahan, ukuran, kondisi, atau detail yang perlu diketahui pembeli." />
+
+          <div class="admin-field">
+            <span class="admin-field__label">Jenis produk <b class="text-destructive" aria-hidden="true">*</b></span>
+            <AppSelect v-model="draft.product_type" :options="productTypeOptions" variant="admin" block />
+          </div>
+
+          <label class="admin-field col-span-full">
+            <span class="admin-field__label">Deskripsi</span>
+            <textarea v-model="draft.description" name="description" rows="4" placeholder="Bahan, ukuran, kondisi, atau detail yang perlu diketahui pembeli." :class="textareaCls" />
           </label>
         </div>
       </section>
 
-      <section class="product-form__section">
-        <header class="product-form__head">
-          <h3>Klasifikasi katalog</h3>
-          <p>Pilih seri anime dan jenis barang agar produk mudah difilter pembeli.</p>
+      <!-- Klasifikasi -->
+      <section :class="sectionCls">
+        <header>
+          <h3 :class="headTitleCls">Klasifikasi katalog</h3>
+          <p :class="headDescCls">Pilih seri anime dan jenis barang agar produk mudah difilter pembeli.</p>
         </header>
-        <div class="product-form__grid">
-          <label class="admin-field">
-            <span>Seri anime</span>
-            <select v-model="draft.anime_id" name="anime_id" :disabled="categoriesLoading">
-              <option :value="null">Belum diatur</option>
-              <option v-for="item in animes" :key="item.id" :value="item.id">
-                {{ item.name }}{{ item.is_active ? '' : ' (nonaktif)' }}
-              </option>
-            </select>
-          </label>
-          <label class="admin-field">
-            <span>Jenis produk</span>
-            <select v-model="draft.category_id" name="category_id" :disabled="categoriesLoading">
-              <option :value="null">Belum diatur</option>
-              <option v-for="item in productCategories" :key="item.id" :value="item.id">
-                {{ item.name }}{{ item.is_active ? '' : ' (nonaktif)' }}
-              </option>
-            </select>
-          </label>
-          <p class="admin-field__hint product-form__classification-hint">
+        <div :class="gridCls">
+          <div class="admin-field">
+            <span class="admin-field__label">Seri anime</span>
+            <AppSelect v-model="draft.anime_id" :options="animeOptions" :disabled="categoriesLoading" variant="admin" searchable block />
+          </div>
+          <div class="admin-field">
+            <span class="admin-field__label">Jenis produk</span>
+            <AppSelect v-model="draft.category_id" :options="categoryOptions" :disabled="categoriesLoading" variant="admin" searchable block />
+          </div>
+          <p class="admin-field__hint col-span-full -mt-1">
             {{ categoriesLoading ? 'Memuat daftar kategori…' : categoriesError || 'Daftar kategori dikelola di menu Kategori.' }}
           </p>
         </div>
       </section>
 
-      <section class="product-form__section">
-        <header class="product-form__head">
-          <h3>Harga dan ketersediaan</h3>
-          <p>Nilai disimpan sebagai rupiah dan jumlah stok berupa bilangan bulat.</p>
+      <!-- Harga & stok -->
+      <section :class="sectionCls">
+        <header>
+          <h3 :class="headTitleCls">Harga dan ketersediaan</h3>
+          <p :class="headDescCls">Nilai disimpan sebagai rupiah dan jumlah stok berupa bilangan bulat.</p>
         </header>
-        <div class="product-form__grid">
+        <div :class="gridCls">
           <label class="admin-field">
-            <span>Harga (Rp) <b aria-hidden="true">*</b></span>
-            <input v-model="draft.price" name="price" type="number" min="0" step="0.01" inputmode="decimal" required placeholder="250000" />
+            <span class="admin-field__label">Harga (Rp) <b class="text-destructive" aria-hidden="true">*</b></span>
+            <input v-model="draft.price" name="price" type="number" min="0" step="0.01" inputmode="decimal" required placeholder="250000" :class="inputCls" />
           </label>
           <label class="admin-field">
-            <span>Stok <b aria-hidden="true">*</b></span>
-            <input v-model.number="draft.stock" name="stock" type="number" min="0" step="1" inputmode="numeric" required />
+            <span class="admin-field__label">Stok <b class="text-destructive" aria-hidden="true">*</b></span>
+            <input v-model.number="draft.stock" name="stock" type="number" min="0" step="1" inputmode="numeric" required :class="inputCls" />
           </label>
-          <label class="admin-field">
-            <span>Status katalog <b aria-hidden="true">*</b></span>
-            <select v-model="draft.status" name="status" required>
-              <option value="draft">Draft</option>
-              <option value="active">Aktif</option>
-              <option value="archived">Diarsipkan</option>
-            </select>
-          </label>
+          <div class="admin-field">
+            <span class="admin-field__label">Status katalog <b class="text-destructive" aria-hidden="true">*</b></span>
+            <AppSelect v-model="draft.status" :options="statusOptions" variant="admin" block />
+          </div>
         </div>
       </section>
 
-      <section class="product-form__section">
-        <header class="product-form__head product-form__head--row">
+      <!-- Gambar -->
+      <section :class="sectionCls">
+        <header class="flex flex-col items-start justify-between gap-4 sm:flex-row">
           <div>
-            <h3>Gambar produk</h3>
-            <p>Unggah file JPG, PNG, WebP, GIF, atau AVIF. Maksimal {{ MAX_IMAGE_MB }} MB per gambar.</p>
+            <h3 :class="headTitleCls">Gambar produk</h3>
+            <p :class="headDescCls">Unggah file JPG, PNG, WebP, GIF, atau AVIF. Maksimal {{ MAX_IMAGE_MB }} MB per gambar.</p>
           </div>
           <AdminButton type="button" variant="secondary" :disabled="isUploading" @click="openFilePicker()">
             <Upload :size="15" /> Unggah gambar
           </AdminButton>
         </header>
 
-        <input
-          ref="fileInput"
-          type="file"
-          class="product-form__file-input"
-          :accept="IMAGE_ACCEPT"
-          multiple
-          @change="handleFileInput"
-        />
+        <input ref="fileInput" type="file" class="hidden" :accept="IMAGE_ACCEPT" multiple @change="handleFileInput" />
 
-        <div v-if="images.length" class="product-form__images">
-          <div v-for="(image, index) in images" :key="image.key" class="product-image-row">
-            <div class="product-image-row__mark" aria-hidden="true">{{ String(index + 1).padStart(2, '0') }}</div>
-            <div class="product-image-row__fields">
-              <div class="product-image-preview">
+        <div v-if="images.length" class="grid gap-2.5">
+          <div
+            v-for="(image, index) in images"
+            :key="image.key"
+            class="grid grid-cols-[24px_minmax(0,1fr)_30px] items-start gap-2 rounded-xl border-2 border-ink bg-white p-2.5 sm:grid-cols-[28px_minmax(0,1fr)_34px] sm:gap-3 sm:p-3"
+          >
+            <div class="mt-px grid size-6 place-items-center rounded-lg border-2 border-ink bg-sun font-body text-[11px] font-bold sm:size-7" aria-hidden="true">
+              {{ String(index + 1).padStart(2, '0') }}
+            </div>
+
+            <div class="grid min-w-0 gap-x-3 gap-y-2.5 sm:grid-cols-2">
+              <div class="relative col-span-full aspect-[4/3] w-full max-w-60 overflow-hidden rounded-xl border-2 border-ink bg-bg">
                 <img
                   v-if="image.preview_url || image.url || imageUrl(image.object_key)"
                   :src="optimizedImageUrl(image.preview_url || image.url || imageUrl(image.object_key), 320) || undefined"
@@ -388,398 +425,54 @@ async function submit() {
                   decoding="async"
                   fetchpriority="low"
                   sizes="240px"
+                  class="block size-full object-contain"
                 />
-                <div v-else class="product-image-preview__placeholder">
+                <div v-else class="grid size-full place-items-center content-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
                   <ImagePlus :size="22" />
                   <span>Belum ada file</span>
                 </div>
-                <span v-if="image.uploading" class="product-image-preview__loading">
-                  <Loader2 :size="16" class="product-image-preview__spin" /> Mengunggah…
+                <span v-if="image.uploading" class="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1.5 bg-ink/85 p-1.5 text-[11px] font-bold text-white">
+                  <Loader2 :size="16" class="animate-spin" /> Mengunggah…
                 </span>
               </div>
 
               <label class="admin-field">
-                <span>Teks alternatif</span>
-                <input v-model.trim="image.alt_text" :name="`image-${index}-alt`" maxlength="255" placeholder="Figur Gojo Satoru tampak depan" />
+                <span class="admin-field__label">Teks alternatif</span>
+                <input v-model.trim="image.alt_text" :name="`image-${index}-alt`" maxlength="255" placeholder="Figur Gojo Satoru tampak depan" :class="inputCls" />
               </label>
 
-              <div class="product-image-row__side">
-                <label class="product-image-primary">
-                  <input v-model="primaryImageKey" type="radio" name="primary-image" :value="image.key" />
+              <div class="flex flex-wrap items-center justify-between gap-2.5 self-end">
+                <label class="flex cursor-pointer items-center gap-2 text-xs font-bold text-ink sm:min-h-10">
+                  <input v-model="primaryImageKey" type="radio" name="primary-image" :value="image.key" class="accent-ink" />
                   <span>Gambar utama</span>
                 </label>
-                <button
-                  type="button"
-                  class="admin-field__link"
-                  :disabled="image.uploading || isUploading"
-                  @click="openFilePicker(image.key)"
-                >
+                <button type="button" :class="linkCls" :disabled="image.uploading || isUploading" @click="openFilePicker(image.key)">
                   <RefreshCw :size="12" /> Ganti file
                 </button>
               </div>
             </div>
-            <button type="button" class="admin-icon-button product-image-row__remove" :aria-label="`Hapus gambar ${index + 1}`" @click="removeImage(index)"><Trash2 :size="16" /></button>
+
+            <button
+              type="button"
+              class="mt-px grid size-[30px] cursor-pointer place-items-center rounded-lg border-2 border-ink bg-white text-destructive shadow-[2px_2px_0_#1B2430] transition-[transform,box-shadow,background-color] duration-100 hover:bg-pinky active:translate-x-0.5 active:translate-y-0.5 active:shadow-none sm:size-[34px]"
+              :aria-label="`Hapus gambar ${index + 1}`"
+              @click="removeImage(index)"
+            >
+              <Trash2 :size="16" />
+            </button>
           </div>
         </div>
-        <p v-else class="product-form__empty-images">Belum ada gambar. Unggah minimal satu gambar agar produk punya visual di katalog.</p>
+        <p v-else class="m-0 rounded-xl border-2 border-dashed border-ink/40 p-3.5 text-xs leading-normal text-muted-foreground">
+          Belum ada gambar. Unggah minimal satu gambar agar produk punya visual di katalog.
+        </p>
       </section>
 
       <AdminState v-if="error" kind="error" :message="error" />
     </form>
+
     <template #footer>
       <AdminButton variant="secondary" :disabled="busy" @click="emit('update:modelValue', false)">Batal</AdminButton>
       <AdminButton type="submit" variant="primary" :disabled="busy || isUploading" form="admin-product-form">{{ busy ? 'Menyimpan…' : isUploading ? 'Menunggu upload…' : isEditing ? 'Simpan perubahan' : 'Buat produk' }}</AdminButton>
     </template>
   </AdminDialog>
 </template>
-
-<style scoped>
-/* ---------- Kerangka form ---------- */
-.product-form {
-  display: grid;
-  gap: 22px;
-}
-
-.product-form__section {
-  display: grid;
-  gap: 13px;
-}
-
-.product-form__section + .product-form__section {
-  padding-top: 20px;
-  border-top: 1px solid #e8e5dd;
-}
-
-.product-form__head h3 {
-  margin: 0;
-  font: 600 15px var(--font-head);
-  letter-spacing: -0.01em;
-}
-
-.product-form__head p {
-  margin: 4px 0 0;
-  font-size: 12px;
-  line-height: 1.5;
-  color: #68717b;
-}
-
-.product-form__head--row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-/* ---------- Grid ---------- */
-.product-form__grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px 16px;
-}
-
-.product-form__full {
-  grid-column: 1 / -1;
-}
-
-.product-form__classification-hint {
-  grid-column: 1 / -1;
-  margin-top: -4px;
-}
-
-/* ---------- Field ---------- */
-.admin-field {
-  display: grid;
-  align-content: start;
-  gap: 6px;
-  min-width: 0;
-  font-size: 12px;
-  font-weight: 700;
-  color: #3f4954;
-}
-
-.admin-field > span,
-.admin-field__label {
-  display: flex;
-  align-items: baseline;
-  gap: 5px;
-  min-height: 15px;
-}
-
-.admin-field > span b,
-.admin-field__label b {
-  color: #a33b2b;
-}
-
-.admin-field > span small,
-.admin-field__label small {
-  font-size: 11px;
-  font-weight: 500;
-  color: #828a93;
-}
-
-.admin-field__hint {
-  margin-top: -2px;
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 1.4;
-  color: #828a93;
-}
-
-.admin-field__tools {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 3px 9px;
-  margin-top: -1px;
-}
-
-.admin-field__tools .admin-field__hint {
-  margin-top: 0;
-}
-
-.admin-field__link {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: #8a5b00;
-  font: 700 11px var(--font-body);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-
-.admin-field__link:hover {
-  color: #5d3c00;
-}
-
-.admin-field input,
-.admin-field select,
-.admin-field textarea {
-  width: 100%;
-  min-width: 0;
-  border: 1px solid #d8d4ca;
-  border-radius: 7px;
-  background: #fff;
-  color: #1b2430;
-  font: 400 13px var(--font-body);
-  padding: 0 10px;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-
-.admin-field input,
-.admin-field select {
-  height: 40px;
-}
-
-.admin-field textarea {
-  padding: 9px 10px;
-  line-height: 1.5;
-  resize: vertical;
-}
-
-.admin-field input::placeholder,
-.admin-field textarea::placeholder {
-  color: #9aa1a9;
-}
-
-.admin-field input:focus-visible,
-.admin-field select:focus-visible,
-.admin-field textarea:focus-visible {
-  outline: none;
-  border-color: #d9b04a;
-  box-shadow: 0 0 0 3px #f6e6b3;
-}
-
-.admin-field input[readonly] {
-  background: #f6f4ef;
-  color: #69727b;
-}
-
-/* ---------- Gambar ---------- */
-.product-form__file-input {
-  display: none;
-}
-
-.product-form__images {
-  display: grid;
-  gap: 10px;
-}
-
-.product-image-row {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) 34px;
-  gap: 12px;
-  align-items: start;
-  padding: 12px;
-  border: 1px solid #e5e1d7;
-  border-radius: 8px;
-  background: #fff;
-}
-
-.product-image-row__mark {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  margin-top: 1px;
-  border-radius: 7px;
-  background: #f3efe5;
-  color: #70664f;
-  font: 700 11px var(--font-body);
-}
-
-.product-image-row__fields {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px 12px;
-  min-width: 0;
-}
-
-.product-image-row__full,
-.product-image-key-note {
-  grid-column: 1 / -1;
-}
-
-.product-image-preview {
-  grid-column: 1 / -1;
-  position: relative;
-  width: min(100%, 240px);
-  aspect-ratio: 4 / 3;
-  overflow: hidden;
-  border: 1px solid #dedbd3;
-  border-radius: 8px;
-  background: #f6f3ec;
-}
-
-.product-image-preview img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.product-image-preview__placeholder {
-  display: grid;
-  place-items: center;
-  align-content: center;
-  gap: 6px;
-  width: 100%;
-  height: 100%;
-  color: #9a917e;
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.product-image-preview__loading {
-  position: absolute;
-  inset: auto 0 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 6px;
-  background: rgb(27 36 48 / 82%);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.product-image-preview__spin {
-  animation: product-image-spin 0.9s linear infinite;
-}
-
-@keyframes product-image-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.product-image-row__side {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  flex-wrap: wrap;
-  align-self: end;
-}
-
-.product-image-row__side .admin-field__link:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.product-image-key-note {
-  margin: -4px 0 0;
-  font-size: 10px;
-  line-height: 1.45;
-  color: #747c85;
-}
-
-.product-image-primary {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  align-self: end;
-  min-height: 40px;
-  font-size: 12px;
-  color: #505963;
-  cursor: pointer;
-}
-
-.product-image-primary input {
-  accent-color: #9b6d00;
-}
-
-.product-image-row__remove {
-  margin-top: 1px;
-  color: #8b5449;
-}
-
-.product-form__empty-images {
-  margin: 0;
-  padding: 14px;
-  border: 1px dashed #d8d4ca;
-  border-radius: 8px;
-  font-size: 12px;
-  line-height: 1.5;
-  color: #68717b;
-}
-
-/* ---------- Responsif ---------- */
-@media (max-width: 680px) {
-  .product-form__grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .product-form__head--row {
-    flex-direction: column;
-  }
-
-  .product-image-row {
-    grid-template-columns: 24px minmax(0, 1fr) 30px;
-    gap: 8px;
-    padding: 9px;
-  }
-
-  .product-image-row__mark {
-    width: 24px;
-    height: 24px;
-  }
-
-  .product-image-row__fields {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .product-image-row__full,
-  .product-image-key-note {
-    grid-column: auto;
-  }
-
-  .product-image-primary {
-    min-height: 0;
-  }
-}
-</style>

@@ -1,10 +1,25 @@
 <script setup lang="ts">
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { PackageSearch, Home, ArrowLeft } from 'lucide-vue-next'
 import StoreShell from '@/components/StoreShell.vue'
 import { useSeo } from '@/composables/useSeo'
 
 useSeo({ title: '404 — Halaman Tidak Ditemukan' })
+
+const router = useRouter()
+
+/**
+ * Kalau halaman ini dibuka langsung (tanpa riwayat), `router.back()` tidak
+ * melakukan apa-apa. Fallback ke beranda supaya tombol selalu bekerja.
+ */
+function goBack() {
+  const canGoBack = Boolean(router.options.history.state.back)
+  if (canGoBack) {
+    router.back()
+    return
+  }
+  void router.replace({ name: 'home' })
+}
 </script>
 
 <template>
@@ -43,7 +58,7 @@ useSeo({ title: '404 — Halaman Tidak Ditemukan' })
             <button
               type="button"
               class="btn bg-white h-11 px-5 font-head font-semibold text-sm flex items-center gap-2"
-              @click="$router.back()"
+              @click="goBack"
             >
               <ArrowLeft :size="16" /> Kembali
             </button>

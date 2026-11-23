@@ -46,10 +46,11 @@ Thumbs.db
 **/.taste-skill/
 
 # AI coding assistants and agent workspace data
+/.codebase-memory/
 **/.agents/
 **/.codex/
 **/.claude/
-**/.gemini/
+**/.gemini
 **/.opencode/
 **/.continue/
 **/.windsurf/
