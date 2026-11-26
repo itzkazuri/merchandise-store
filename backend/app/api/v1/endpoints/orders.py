@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.models import Cart, CartItem, Order, OrderItem, Product
 from app.schemas.common import Page
 from app.schemas.order import CheckoutRequest, OrderOut, OrderStatus
+from app.services.midtrans import cancel_midtrans_transaction
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
@@ -28,13 +29,31 @@ def serialize_order(order: Order) -> OrderOut:
 def generate_order_number(db: Session) -> str:
     day = datetime.now(UTC).strftime("%Y%m%d")
     for _ in range(5):
-        candidate = f"{settings.ORDER_PREFIX}-{day}-{secrets.token_hex(3).upper()}"
+        candidate = f"{settings.ORDER_PREFIX}-{day}-{secrets.token_hex(4).upper()}"
         if db.scalar(select(Order.id).where(Order.order_number == candidate)) is None:
             return candidate
     raise HTTPException(
         http_status.HTTP_500_INTERNAL_SERVER_ERROR,
         "Gagal membuat nomor pesanan, coba lagi",
     )
+
+
+def get_owned_order(db: Session, user_id: int, order_number: str) -> Order:
+    """Ambil pesanan milik user berdasarkan nomor pesanan publik.
+
+    Nomor pesanan dipakai di URL dan bersifat acak, bukan id berurutan.
+    Pesanan milik akun lain selalu dijawab 404 supaya keberadaannya tidak bocor.
+    """
+    reference = (order_number or "").strip()
+    if not reference or len(reference) > 50:
+        raise HTTPException(http_status.HTTP_404_NOT_FOUND, "Pesanan tidak ditemukan")
+
+    order = db.scalar(
+        select(Order).where(Order.order_number == reference, Order.user_id == user_id)
+    )
+    if order is None:
+        raise HTTPException(http_status.HTTP_404_NOT_FOUND, "Pesanan tidak ditemukan")
+    return order
 
 
 def restock_order(db: Session, order: Order) -> None:
@@ -172,23 +191,18 @@ def my_orders(
     )
 
 
-@router.get("/{order_id}", response_model=OrderOut, summary="Detail pesanan saya")
-def my_order_detail(order_id: int, user: CurrentUser, db: DbSession) -> OrderOut:
-    order = db.get(Order, order_id)
-    if order is None or order.user_id != user.id:
-        raise HTTPException(http_status.HTTP_404_NOT_FOUND, "Pesanan tidak ditemukan")
-    return serialize_order(order)
+@router.get("/{order_number}", response_model=OrderOut, summary="Detail pesanan saya")
+def my_order_detail(order_number: str, user: CurrentUser, db: DbSession) -> OrderOut:
+    return serialize_order(get_owned_order(db, user.id, order_number))
 
 
 @router.post(
-    "/{order_id}/cancel",
+    "/{order_number}/cancel",
     response_model=OrderOut,
     summary="Batalkan pesanan (belum dibayar)",
 )
-def cancel_my_order(order_id: int, user: CurrentUser, db: DbSession) -> OrderOut:
-    order = db.get(Order, order_id)
-    if order is None or order.user_id != user.id:
-        raise HTTPException(http_status.HTTP_404_NOT_FOUND, "Pesanan tidak ditemukan")
+async def cancel_my_order(order_number: str, user: CurrentUser, db: DbSession) -> OrderOut:
+    order = get_owned_order(db, user.id, order_number)
 
     if order.status != "pending_payment":
         raise HTTPException(
@@ -200,4 +214,9 @@ def cancel_my_order(order_id: int, user: CurrentUser, db: DbSession) -> OrderOut
     restock_order(db, order)
     db.commit()
     db.refresh(order)
+
+    if order.payment_method == "midtrans":
+        await cancel_midtrans_transaction(order.order_number)
+
     return serialize_order(order)
+

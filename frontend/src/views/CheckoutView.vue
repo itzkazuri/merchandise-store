@@ -19,7 +19,7 @@ import { useCart } from '@/composables/useCart'
 import { useAuth } from '@/composables/useAuth'
 import { useSeo } from '@/composables/useSeo'
 import { ordersApi, paymentsApi, syncCartToServer } from '@/api/store'
-import { payWithSnap } from '@/api/midtrans'
+import { payWithSnap, preloadSnap } from '@/api/midtrans'
 import { ApiError } from '@/api/client'
 import { rupiah } from '@/lib/format'
 import type { CheckoutBody, Order } from '@/types/order'
@@ -72,6 +72,7 @@ watch(paymentMethod, () => {
 })
 
 onMounted(() => {
+  preloadSnap()
   if (!cartLines.value.length) {
     router.replace('/keranjang')
     return
@@ -132,7 +133,7 @@ async function submit() {
   }
 
   if (paymentMethod.value === 'cash') {
-    router.replace({ name: 'order-detail', params: { id: order.id }, query: { baru: '1' } })
+    router.replace({ name: 'order-detail', params: { orderNumber: order.order_number }, query: { baru: '1' } })
     return
   }
 
@@ -140,13 +141,13 @@ async function submit() {
   try {
     const payment = await paymentsApi.createMidtrans(order.id)
     await payWithSnap(payment, {
-      onSuccess: () => router.replace({ name: 'order-detail', params: { id: order.id }, query: { bayar: 'sukses' } }),
-      onPending: () => router.replace({ name: 'order-detail', params: { id: order.id }, query: { bayar: 'pending' } }),
-      onError: () => router.replace({ name: 'order-detail', params: { id: order.id }, query: { bayar: 'gagal' } }),
-      onClose: () => router.replace({ name: 'order-detail', params: { id: order.id }, query: { bayar: 'belum' } }),
+      onSuccess: () => router.replace({ name: 'order-detail', params: { orderNumber: order.order_number }, query: { bayar: 'verifikasi' } }),
+      onPending: () => router.replace({ name: 'order-detail', params: { orderNumber: order.order_number }, query: { bayar: 'pending' } }),
+      onError: () => router.replace({ name: 'order-detail', params: { orderNumber: order.order_number }, query: { bayar: 'gagal' } }),
+      onClose: () => router.replace({ name: 'order-detail', params: { orderNumber: order.order_number }, query: { bayar: 'belum' } }),
     })
   } catch {
-    router.replace({ name: 'order-detail', params: { id: order.id }, query: { bayar: 'manual' } })
+    router.replace({ name: 'order-detail', params: { orderNumber: order.order_number }, query: { bayar: 'manual' } })
   } finally {
     step.value = 'idle'
   }

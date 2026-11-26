@@ -18,11 +18,15 @@ import {
   X,
 } from 'lucide-vue-next'
 import { useAuth } from '@/composables/useAuth'
+import { imageUrl } from '@/lib/productVisual'
 
 const COLLAPSE_KEY = 'mochibako.admin.sidebar-collapsed'
 const route = useRoute()
 const router = useRouter()
 const { user, logout } = useAuth()
+const avatarFailed = ref(false)
+const userAvatar = computed(() => imageUrl(user.value?.avatar_url || user.value?.avatar))
+
 const mobileOpen = ref(false)
 const collapsed = ref(localStorage.getItem(COLLAPSE_KEY) === '1')
 
@@ -156,9 +160,19 @@ async function signOut() {
           title="Buka profil saya"
           @click="mobileOpen = false"
         >
-          <span class="w-9 h-9 rounded-full bg-sun border-2 border-ink grid place-items-center font-head font-extrabold text-sm text-ink shrink-0 shadow-[1px_1px_0_#1B2430]">
-            {{ user?.name?.slice(0, 1).toUpperCase() || 'M' }}
+          <span class="w-9 h-9 rounded-full bg-sun border-2 border-ink grid place-items-center font-head font-extrabold text-sm text-ink shrink-0 shadow-[1px_1px_0_#1B2430] overflow-hidden">
+            <img
+              v-if="userAvatar && !avatarFailed"
+              :src="userAvatar"
+              :alt="user?.name || 'Foto profil'"
+              class="w-full h-full object-cover"
+              @error="avatarFailed = true"
+            />
+            <template v-else>
+              {{ user?.name?.slice(0, 1).toUpperCase() || 'M' }}
+            </template>
           </span>
+
           <div v-if="!collapsed" class="min-w-0">
             <strong class="font-head font-bold text-xs sm:text-sm text-ink block truncate leading-tight">
               {{ user?.name || 'Admin' }}

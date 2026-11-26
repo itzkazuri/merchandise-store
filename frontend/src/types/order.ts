@@ -25,6 +25,7 @@ export interface Order {
   shipping_address?: string | null
   payment_method: PaymentMethod
   paid_at?: string | null
+  midtrans_transaction_id?: string | null
   subtotal: string | number
   shipping_cost: string | number
   total: string | number
@@ -61,6 +62,21 @@ export interface MidtransPayment {
   client_key: string
   snap_js_url: string
 }
+
+export interface PaymentSyncResult {
+  order_number: string
+  status: OrderStatus
+  payment_method: PaymentMethod
+  is_settled: boolean
+  transaction_status?: string | null
+  fraud_status?: string | null
+  transaction_id?: string | null
+  payment_type?: string | null
+  gross_amount?: number | null
+  message: string
+  order?: Order | null
+}
+
 
 export interface CheckoutBody {
   delivery_method: DeliveryMethod

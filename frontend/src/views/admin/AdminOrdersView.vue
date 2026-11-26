@@ -37,6 +37,7 @@ interface AdminOrder {
   shipping_address?: string | null
   payment_method: PaymentMethod
   paid_at?: string | null
+  midtrans_transaction_id?: string | null
   subtotal: string | number
   shipping_cost: string | number
   total: string | number
@@ -116,6 +117,7 @@ const hasActiveFilters = computed(() => Boolean(search.value.trim()) || Boolean(
 
 const nextStatus = computed(() => (selected.value ? NEXT_STATUS[selected.value.status] : undefined))
 const canMarkPaid = computed(() => selected.value?.status === 'pending_payment' && selected.value.payment_method === 'cash')
+const canCheckMidtrans = computed(() => selected.value?.payment_method === 'midtrans')
 const canCancel = computed(() => Boolean(selected.value && ['pending_payment', 'paid', 'processing'].includes(selected.value.status)))
 const canEditTracking = computed(() => Boolean(selected.value && !['pending_payment', 'cancelled'].includes(selected.value.status)))
 
@@ -271,6 +273,35 @@ async function markPaid() {
   }
 }
 
+async function checkMidtransStatus() {
+  if (!selected.value) return
+  actionBusy.value = true
+  detailError.value = ''
+  notice.value = ''
+  try {
+    const res = await adminApi.syncMidtrans(selected.value.id) as {
+      order?: AdminOrder
+      is_settled: boolean
+      message?: string
+      transaction_status?: string
+      fraud_status?: string
+      transaction_id?: string
+    }
+    if (res.order) {
+      replaceOrder(res.order)
+    }
+    notice.value = res.is_settled
+      ? 'Pembayaran terverifikasi LUNAS di Midtrans!'
+      : `Status Midtrans: ${res.message || res.transaction_status || 'Belum dibayar'}`
+    await load(page.value)
+  } catch (cause) {
+    detailError.value = cause instanceof ApiError ? cause.message : 'Gagal memeriksa status ke Midtrans.'
+  } finally {
+    actionBusy.value = false
+  }
+}
+
+
 async function saveTracking() {
   if (!selected.value) return
   const value = trackingInput.value.trim()
@@ -297,26 +328,26 @@ onMounted(() => load())
 </script>
 
 <template>
-  <div class="admin-orders-page">
+  <div class="space-y-4">
     <AdminPageHeader title="Pesanan" description="Pantau pembayaran, proses pesanan, simpan nomor resi, dan selesaikan transaksi.">
-      <AdminButton variant="secondary" :disabled="loading" @click="load(page)"><RefreshCw :size="15" :class="{ 'is-spinning': loading }" /> Muat ulang</AdminButton>
+      <AdminButton variant="secondary" :disabled="loading" @click="load(page)"><RefreshCw :size="15" :class="{ 'animate-spin': loading }" /> Muat ulang</AdminButton>
     </AdminPageHeader>
 
-    <div v-if="notice" class="admin-orders-alert admin-orders-alert--ok" role="status">{{ notice }}</div>
-    <div v-if="error && !loading" class="admin-orders-alert" role="alert">{{ error }}</div>
+    <div v-if="notice" class="rounded-xl border-2 border-mint/40 bg-mint/20 px-3.5 py-2.5 text-xs font-bold text-ink" role="status">{{ notice }}</div>
+    <div v-if="error && !loading" class="rounded-xl border-2 border-destructive/30 bg-destructive/10 px-3.5 py-2.5 text-xs font-bold text-destructive" role="alert">{{ error }}</div>
 
-    <section class="admin-panel admin-orders-panel" aria-label="Daftar pesanan">
-      <header class="admin-panel__header admin-orders-head">
+    <section class="admin-panel overflow-hidden" aria-label="Daftar pesanan">
+      <header class="flex flex-wrap items-center justify-between gap-3 border-b border-ink/10 px-4 py-3 sm:px-5 sm:py-3.5">
         <div>
-          <h2>Semua pesanan</h2>
-          <p aria-live="polite">{{ loading && !rows.length ? 'Memuat…' : showingRange }}</p>
+          <h2 class="font-head text-base font-bold text-ink">Semua pesanan</h2>
+          <p class="mt-0.5 text-xs font-semibold text-muted-foreground" aria-live="polite">{{ loading && !rows.length ? 'Memuat…' : showingRange }}</p>
         </div>
-        <span class="admin-orders-total">{{ pageInfo.total.toLocaleString('id-ID') }} pesanan</span>
+        <span class="rounded-full border border-ink/15 bg-ink/5 px-2.5 py-0.5 text-[11px] font-bold text-ink/75 whitespace-nowrap">{{ pageInfo.total.toLocaleString('id-ID') }} pesanan</span>
       </header>
 
-      <form class="admin-order-toolbar" role="search" @submit.prevent="runSearch">
-        <div class="admin-order-search">
-          <Search :size="16" aria-hidden="true" class="admin-order-search__icon" />
+      <form class="flex flex-wrap items-center gap-2 border-b border-ink/10 bg-[#fdfcf8] p-3 sm:px-4" role="search" @submit.prevent="runSearch">
+        <div class="relative flex flex-1 items-center gap-2 min-w-[220px] max-w-[360px] h-[38px] rounded-lg border border-ink/20 bg-white px-2.5 text-muted-foreground focus-within:border-sun focus-within:ring-2 focus-within:ring-sun/30">
+          <Search :size="16" aria-hidden="true" class="shrink-0 text-muted-foreground" />
           <label class="sr-only" for="admin-order-search">Cari nomor pesanan, nama, telepon, atau email</label>
           <input
             id="admin-order-search"
@@ -325,14 +356,15 @@ onMounted(() => load())
             autocomplete="off"
             enterkeyhint="search"
             placeholder="Cari nomor, nama, telepon, email"
+            class="w-full h-full border-0 bg-transparent text-xs font-semibold text-ink placeholder:text-muted-foreground/60 focus:outline-none"
             @input="scheduleSearch"
           />
-          <button v-if="search" type="button" class="admin-order-search__clear" aria-label="Hapus pencarian" @click="clearSearch">
-            <X :size="14" />
+          <button v-if="search" type="button" class="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-ink/10 text-ink/70 hover:bg-ink/20 transition-colors" aria-label="Hapus pencarian" @click="clearSearch">
+            <X :size="12" />
           </button>
         </div>
 
-        <div class="admin-order-filter min-w-[150px]">
+        <div class="min-w-[145px]">
           <span class="sr-only">Status pesanan</span>
           <AppSelect
             v-model="statusFilter"
@@ -344,7 +376,7 @@ onMounted(() => load())
           />
         </div>
 
-        <div class="admin-order-filter min-w-[165px]">
+        <div class="min-w-[155px]">
           <span class="sr-only">Metode pengiriman</span>
           <AppSelect
             v-model="deliveryFilter"
@@ -356,8 +388,8 @@ onMounted(() => load())
           />
         </div>
 
-        <div class="admin-order-date flex items-center gap-1.5 min-w-[140px]">
-          <span class="text-xs font-semibold text-ink/65 shrink-0">Dari</span>
+        <div class="flex items-center gap-1.5 min-w-[130px]">
+          <span class="text-[11px] font-bold text-muted-foreground uppercase">Dari</span>
           <AppDatePicker
             v-model="dateFrom"
             variant="admin"
@@ -367,8 +399,8 @@ onMounted(() => load())
             @change="runSearch"
           />
         </div>
-        <div class="admin-order-date flex items-center gap-1.5 min-w-[140px]">
-          <span class="text-xs font-semibold text-ink/65 shrink-0">Sampai</span>
+        <div class="flex items-center gap-1.5 min-w-[130px]">
+          <span class="text-[11px] font-bold text-muted-foreground uppercase">Sampai</span>
           <AppDatePicker
             v-model="dateTo"
             variant="admin"
@@ -379,60 +411,60 @@ onMounted(() => load())
           />
         </div>
 
-        <button v-if="hasActiveFilters" type="button" class="admin-order-reset" @click="resetFilters">
+        <button v-if="hasActiveFilters" type="button" class="inline-flex h-[34px] cursor-pointer items-center gap-1.5 rounded-lg border border-ink/20 bg-white px-2.5 font-body text-xs font-bold text-ink hover:bg-banner-sun transition-colors" @click="resetFilters">
           <RotateCcw :size="13" /> Reset
         </button>
       </form>
 
       <AdminState v-if="loading && !rows.length" kind="loading" message="Memuat pesanan…" />
       <AdminState v-else-if="error && !rows.length" kind="error" :message="error" @retry="load(page)" />
-      <div v-else-if="!rows.length" class="admin-orders-empty">
-        <PackageCheck :size="22" />
-        <strong>{{ hasActiveFilters ? 'Tidak ada pesanan yang cocok' : 'Belum ada pesanan masuk' }}</strong>
-        <span>{{ hasActiveFilters ? 'Coba kata kunci atau filter lain.' : 'Pesanan dari toko dan kasir akan muncul di sini.' }}</span>
-        <button v-if="hasActiveFilters" type="button" class="admin-order-reset" @click="resetFilters">
+      <div v-else-if="!rows.length" class="grid justify-items-center gap-2 p-10 text-center text-muted-foreground">
+        <PackageCheck :size="24" class="text-ink/40" />
+        <strong class="font-head text-base font-bold text-ink">{{ hasActiveFilters ? 'Tidak ada pesanan yang cocok' : 'Belum ada pesanan masuk' }}</strong>
+        <span class="max-w-[36ch] text-xs leading-relaxed text-muted-foreground">{{ hasActiveFilters ? 'Coba kata kunci atau filter lain.' : 'Pesanan dari toko dan kasir akan muncul di sini.' }}</span>
+        <button v-if="hasActiveFilters" type="button" class="inline-flex h-[34px] cursor-pointer items-center gap-1.5 rounded-lg border border-ink/20 bg-white px-3 font-body text-xs font-bold text-ink hover:bg-banner-sun transition-colors" @click="resetFilters">
           <RotateCcw :size="13" /> Reset pencarian &amp; filter
         </button>
       </div>
 
-      <div v-else class="admin-order-results" :class="{ 'is-refreshing': loading }" :aria-busy="loading">
+      <div v-else :class="{ 'opacity-60 transition-opacity': loading }" :aria-busy="loading">
         <AdminDataTable :columns="columns" :rows="rows" row-key="id">
           <template #order_number="{ row }">
-            <span class="admin-order-number">
-              <strong>{{ row.order_number }}</strong>
-              <small>{{ itemCount(row) }} item · {{ paymentLabel(row.payment_method) }}</small>
+            <span class="grid gap-0.5 min-w-0">
+              <strong class="font-bold text-xs text-ink">{{ row.order_number }}</strong>
+              <small class="text-[11px] font-semibold text-muted-foreground">{{ itemCount(row) }} item · {{ paymentLabel(row.payment_method) }}</small>
             </span>
           </template>
           <template #customer="{ row }">
-            <span class="admin-order-customer">
-              <strong>{{ row.recipient_name || 'Pembeli' }}</strong>
-              <small>{{ row.recipient_phone || row.user_email || 'Tanpa kontak' }}</small>
+            <span class="grid gap-0.5 min-w-0">
+              <strong class="font-bold text-xs text-ink">{{ row.recipient_name || 'Pembeli' }}</strong>
+              <small class="max-w-[200px] truncate text-[11px] font-semibold text-muted-foreground">{{ row.recipient_phone || row.user_email || 'Tanpa kontak' }}</small>
             </span>
           </template>
           <template #created_at="{ row }">
-            <span class="admin-order-date-cell">{{ date(row.created_at) }}</span>
+            <span class="text-xs font-semibold text-muted-foreground">{{ date(row.created_at) }}</span>
           </template>
           <template #total="{ row }">
-            <span class="admin-order-total-cell">
-              <strong>{{ money(row.total) }}</strong>
-              <small>{{ deliveryLabel(row.delivery_method) }}</small>
+            <span class="grid gap-0.5 justify-items-end min-w-0">
+              <strong class="font-bold text-xs text-ink tabular-nums">{{ money(row.total) }}</strong>
+              <small class="text-[11px] font-semibold text-muted-foreground">{{ deliveryLabel(row.delivery_method) }}</small>
             </span>
           </template>
           <template #status="{ row }"><AdminStatus :status="row.status" /></template>
           <template #tracking="{ row }">
-            <span v-if="row.tracking_number" class="admin-order-tracking">{{ row.tracking_number }}</span>
-            <span v-else class="admin-cell-sub">Belum ada</span>
+            <span v-if="row.tracking_number" class="font-mono text-xs font-semibold text-ink/80">{{ row.tracking_number }}</span>
+            <span v-else class="text-xs text-muted-foreground">Belum ada</span>
           </template>
           <template #actions="{ row }">
-            <button type="button" class="admin-order-detail" @click="openOrder(row)">Detail</button>
+            <button type="button" class="inline-flex h-[30px] cursor-pointer items-center rounded-lg border border-ink/20 bg-white px-2.5 text-xs font-bold text-ink hover:bg-ink/5 transition-colors" @click="openOrder(row)">Detail</button>
           </template>
           <template #empty><AdminState kind="empty" message="Belum ada pesanan masuk." /></template>
         </AdminDataTable>
       </div>
 
-      <footer v-if="pageInfo.pages > 1" class="admin-order-pagination">
+      <footer v-if="pageInfo.pages > 1" class="flex flex-wrap items-center justify-between gap-3 border-t border-ink/10 bg-[#fdfcf8] px-4 py-3 text-xs text-muted-foreground">
         <span>Halaman {{ pageInfo.page }} dari {{ pageInfo.pages }}</span>
-        <div>
+        <div class="flex gap-2">
           <AdminButton variant="secondary" :disabled="!pageInfo.has_prev || loading" @click="load(pageInfo.page - 1)"><ChevronLeft :size="15" /> Sebelumnya</AdminButton>
           <AdminButton variant="secondary" :disabled="!pageInfo.has_next || loading" @click="load(pageInfo.page + 1)">Berikutnya <ChevronRight :size="15" /></AdminButton>
         </div>
@@ -444,81 +476,92 @@ onMounted(() => load())
       :title="selected ? selected.order_number : 'Detail pesanan'"
       :description="selected ? `Dibuat ${dateTime(selected.created_at)}` : undefined"
     >
-      <div v-if="selected" class="order-detail">
-        <div class="order-detail__banner">
-          <div>
-            <span class="order-detail__label">Status pesanan</span>
+      <div v-if="selected" class="grid gap-4">
+        <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ink/15 bg-[#fbf8f0] p-3">
+          <div class="flex items-center gap-2">
+            <span class="text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground">Status pesanan</span>
             <AdminStatus :status="selected.status" />
           </div>
-          <button type="button" class="order-detail__copy" @click="copyNumber"><ClipboardCopy :size="14" /> Salin nomor</button>
+          <button type="button" class="inline-flex h-[30px] cursor-pointer items-center gap-1.5 rounded-lg border border-ink/20 bg-white px-2.5 text-xs font-bold text-ink/80 hover:bg-ink/5 transition-colors" @click="copyNumber">
+            <ClipboardCopy :size="13" /> Salin nomor
+          </button>
         </div>
 
         <AdminState v-if="detailLoading" kind="loading" message="Menyegarkan detail pesanan…" />
         <AdminState v-if="detailError" kind="error" :message="detailError" />
 
-        <div class="order-detail__grid">
-          <section class="order-detail__card">
-            <h3>Pelanggan</h3>
-            <dl>
-              <div><dt>Nama</dt><dd>{{ selected.recipient_name || '—' }}</dd></div>
-              <div><dt>Telepon</dt><dd>{{ selected.recipient_phone || '—' }}</dd></div>
-              <div><dt>Email</dt><dd>{{ selected.user_email || '—' }}</dd></div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <section class="rounded-xl border border-ink/15 bg-white p-3">
+            <h3 class="mb-2 font-head text-xs font-bold uppercase tracking-wider text-muted-foreground">Pelanggan</h3>
+            <dl class="space-y-1.5 text-xs">
+              <div class="grid gap-0.5"><dt class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Nama</dt><dd class="font-semibold text-ink">{{ selected.recipient_name || '—' }}</dd></div>
+              <div class="grid gap-0.5"><dt class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Telepon</dt><dd class="font-semibold text-ink">{{ selected.recipient_phone || '—' }}</dd></div>
+              <div class="grid gap-0.5"><dt class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Email</dt><dd class="font-semibold text-ink break-all">{{ selected.user_email || '—' }}</dd></div>
             </dl>
           </section>
 
-          <section class="order-detail__card">
-            <h3>Pengiriman</h3>
-            <dl>
-              <div><dt>Metode</dt><dd>{{ deliveryLabel(selected.delivery_method) }}</dd></div>
-              <div><dt>Alamat</dt><dd>{{ selected.shipping_address || '—' }}</dd></div>
-              <div><dt>Catatan</dt><dd>{{ selected.delivery_note || '—' }}</dd></div>
+          <section class="rounded-xl border border-ink/15 bg-white p-3">
+            <h3 class="mb-2 font-head text-xs font-bold uppercase tracking-wider text-muted-foreground">Pengiriman</h3>
+            <dl class="space-y-1.5 text-xs">
+              <div class="grid gap-0.5"><dt class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Metode</dt><dd class="font-semibold text-ink">{{ deliveryLabel(selected.delivery_method) }}</dd></div>
+              <div class="grid gap-0.5"><dt class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Alamat</dt><dd class="font-semibold text-ink leading-snug">{{ selected.shipping_address || '—' }}</dd></div>
+              <div class="grid gap-0.5"><dt class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Catatan</dt><dd class="font-semibold text-ink leading-snug">{{ selected.delivery_note || '—' }}</dd></div>
             </dl>
           </section>
 
-          <section class="order-detail__card">
-            <h3>Pembayaran</h3>
-            <dl>
-              <div><dt>Metode</dt><dd>{{ paymentLabel(selected.payment_method) }}</dd></div>
-              <div><dt>Dibayar</dt><dd>{{ selected.paid_at ? dateTime(selected.paid_at) : 'Belum dibayar' }}</dd></div>
-              <div><dt>Total</dt><dd class="order-detail__grand">{{ money(selected.total) }}</dd></div>
+          <section class="rounded-xl border border-ink/15 bg-white p-3">
+            <h3 class="mb-2 font-head text-xs font-bold uppercase tracking-wider text-muted-foreground">Pembayaran</h3>
+            <dl class="space-y-1.5 text-xs">
+              <div class="grid gap-0.5"><dt class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Metode</dt><dd class="font-semibold text-ink">{{ paymentLabel(selected.payment_method) }}</dd></div>
+              <div v-if="selected.midtrans_transaction_id" class="grid gap-0.5">
+                <dt class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">ID Transaksi Midtrans</dt>
+                <dd class="font-mono text-[11px] font-bold text-ink/80">{{ selected.midtrans_transaction_id }}</dd>
+              </div>
+              <div class="grid gap-0.5"><dt class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Dibayar</dt><dd class="font-semibold text-ink">{{ selected.paid_at ? dateTime(selected.paid_at) : 'Belum dibayar' }}</dd></div>
+              <div class="grid gap-0.5"><dt class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Total</dt><dd class="font-head text-sm font-bold text-ink tabular-nums">{{ money(selected.total) }}</dd></div>
             </dl>
           </section>
         </div>
 
-        <section class="order-detail__items">
-          <h3>Item pesanan</h3>
-          <ul>
-            <li v-for="item in selected.items || []" :key="item.id">
-              <span class="order-detail__item-name">{{ item.product_name }}<small>{{ item.quantity }} × {{ money(item.price) }}</small></span>
-              <strong>{{ money(item.subtotal) }}</strong>
+        <section class="rounded-xl border border-ink/15 bg-white p-3 sm:p-4">
+          <h3 class="mb-2 font-head text-xs font-bold uppercase tracking-wider text-muted-foreground">Item pesanan</h3>
+          <ul class="divide-y divide-dashed divide-ink/15 space-y-2">
+            <li v-for="item in selected.items || []" :key="item.id" class="flex items-start justify-between gap-3 pt-2 text-xs">
+              <div class="grid gap-0.5 min-w-0">
+                <span class="font-bold text-ink">{{ item.product_name }}</span>
+                <small class="text-[11px] font-semibold text-muted-foreground">{{ item.quantity }} × {{ money(item.price) }}</small>
+              </div>
+              <strong class="shrink-0 font-bold text-ink tabular-nums">{{ money(item.subtotal) }}</strong>
             </li>
-            <li v-if="!(selected.items || []).length" class="order-detail__item-empty">Belum ada item pada pesanan ini.</li>
+            <li v-if="!(selected.items || []).length" class="text-xs text-muted-foreground py-2">Belum ada item pada pesanan ini.</li>
           </ul>
-          <dl class="order-detail__totals">
-            <div><dt>Subtotal</dt><dd>{{ money(selected.subtotal) }}</dd></div>
-            <div><dt>Ongkir</dt><dd>{{ money(selected.shipping_cost) }}</dd></div>
-            <div class="is-grand"><dt>Total</dt><dd>{{ money(selected.total) }}</dd></div>
+          <dl class="mt-3 pt-2.5 border-t border-ink/15 space-y-1 text-xs text-muted-foreground">
+            <div class="flex justify-between"><span>Subtotal</span><span class="font-semibold text-ink tabular-nums">{{ money(selected.subtotal) }}</span></div>
+            <div class="flex justify-between"><span>Ongkir</span><span class="font-semibold text-ink tabular-nums">{{ money(selected.shipping_cost) }}</span></div>
+            <div class="flex justify-between pt-2 border-t border-dashed border-ink/20 font-head text-sm font-bold text-ink"><span>Total</span><span class="tabular-nums">{{ money(selected.total) }}</span></div>
           </dl>
         </section>
 
-        <section v-if="canEditTracking" class="order-detail__tracking">
-          <h3>Nomor resi</h3>
-          <form v-if="selected.delivery_method === 'courier' || selected.tracking_number" class="order-tracking-form" @submit.prevent="saveTracking">
-            <label class="order-tracking-field">
-              <span class="sr-only">Nomor resi pengiriman</span>
-              <Truck :size="15" aria-hidden="true" />
-              <input v-model="trackingInput" type="text" maxlength="100" autocomplete="off" placeholder="Contoh: JP1234567890" />
+        <section v-if="canEditTracking" class="rounded-xl border border-ink/15 bg-[#fbfaf5] p-3 sm:p-4">
+          <h3 class="mb-2 font-head text-xs font-bold uppercase tracking-wider text-muted-foreground">Nomor resi</h3>
+          <form v-if="selected.delivery_method === 'courier' || selected.tracking_number" class="flex flex-col sm:flex-row gap-2" @submit.prevent="saveTracking">
+            <label class="flex flex-1 items-center gap-2 h-[38px] rounded-lg border border-ink/20 bg-white px-3 text-muted-foreground focus-within:border-sun focus-within:ring-2 focus-within:ring-sun/30">
+              <Truck :size="15" class="shrink-0" />
+              <input v-model="trackingInput" type="text" maxlength="100" autocomplete="off" placeholder="Contoh: JP1234567890" class="w-full border-0 bg-transparent font-mono text-xs font-bold text-ink placeholder:text-muted-foreground/60 focus:outline-none" />
             </label>
             <AdminButton type="submit" variant="secondary" :disabled="actionBusy">Simpan resi</AdminButton>
           </form>
-          <p v-else class="order-detail__hint">Pesanan ini tidak memakai kurir, jadi nomor resi tidak diperlukan.</p>
+          <p v-else class="text-xs text-muted-foreground">Pesanan ini tidak memakai kurir, jadi nomor resi tidak diperlukan.</p>
         </section>
       </div>
 
       <template #footer>
-        <div class="order-dialog-footer">
+        <div class="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 w-full">
           <AdminButton variant="secondary" :disabled="actionBusy" @click="detailOpen = false">Tutup</AdminButton>
-          <button v-if="canCancel" type="button" class="order-danger-button" :disabled="actionBusy" @click="transition('cancelled')">Batalkan pesanan</button>
+          <button v-if="canCancel" type="button" class="inline-flex h-[36px] items-center justify-center rounded-lg border border-destructive/30 bg-white px-3 text-xs font-bold text-destructive hover:bg-destructive/10 disabled:opacity-50 transition-colors" :disabled="actionBusy" @click="transition('cancelled')">Batalkan pesanan</button>
+          <AdminButton v-if="canCheckMidtrans" variant="secondary" :disabled="actionBusy" @click="checkMidtransStatus">
+            <RefreshCw :size="14" :class="{ 'animate-spin': actionBusy }" /> {{ actionBusy ? 'Memeriksa Midtrans…' : 'Cek Status Midtrans' }}
+          </AdminButton>
           <AdminButton v-if="canMarkPaid" variant="primary" :disabled="actionBusy" @click="markPaid">
             <CheckCircle2 :size="15" /> {{ actionBusy ? 'Menyimpan…' : 'Tandai lunas' }}
           </AdminButton>
@@ -531,626 +574,3 @@ onMounted(() => load())
   </div>
 </template>
 
-<style scoped>
-.admin-orders-panel {
-  overflow: hidden;
-}
-
-.admin-orders-head {
-  padding: 15px 18px;
-}
-
-.admin-orders-head h2 {
-  font-size: 16px;
-}
-
-.admin-orders-head p {
-  margin: 3px 0 0;
-  color: #68717b;
-  font-size: 12px;
-}
-
-.admin-orders-total {
-  padding: 3px 9px;
-  border-radius: 999px;
-  background: #f3efe5;
-  color: #6d6450;
-  font-size: 11px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.admin-orders-alert {
-  margin-bottom: 14px;
-  padding: 10px 13px;
-  border: 1px solid #e4c3bc;
-  border-radius: 8px;
-  background: #fbefec;
-  color: #8a453a;
-  font-size: 12.5px;
-  font-weight: 600;
-}
-
-.admin-orders-alert--ok {
-  border-color: #c6ddc9;
-  background: #eef5ef;
-  color: #2f5b38;
-}
-
-/* ---------- Toolbar ---------- */
-.admin-order-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 13px 16px;
-  border-bottom: 1px solid #e8e5dd;
-  background: #fdfcf8;
-}
-
-.admin-order-search {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1 1 240px;
-  max-width: 380px;
-  height: 38px;
-  padding: 0 6px 0 11px;
-  border: 1px solid #ddd9ce;
-  border-radius: 8px;
-  background: #fff;
-  color: #69727c;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-
-.admin-order-search:focus-within {
-  border-color: #c4a24a;
-  box-shadow: 0 0 0 3px #f6e6b3;
-  outline: none;
-}
-
-.admin-order-search__icon {
-  flex: none;
-}
-
-.admin-order-search input {
-  flex: 1;
-  width: 100%;
-  min-width: 0;
-  height: 100%;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: #1b2430;
-  font: 400 13px var(--font-body);
-}
-
-.admin-order-search input::-webkit-search-cancel-button {
-  display: none;
-}
-
-.admin-order-search__clear {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 24px;
-  height: 24px;
-  border: 0;
-  border-radius: 999px;
-  background: #efece4;
-  color: #5f6770;
-  cursor: pointer;
-}
-
-.admin-order-search__clear:hover {
-  background: #e6e1d5;
-  color: #1b2430;
-}
-
-.admin-order-filter select {
-  height: 38px;
-  max-width: 168px;
-  padding: 0 28px 0 10px;
-  border: 1px solid #ddd9ce;
-  border-radius: 8px;
-  background: #fff;
-  color: #3f4852;
-  font: 600 12px var(--font-body);
-}
-
-.admin-order-filter select:focus-visible,
-.admin-order-date input:focus-visible {
-  outline: 3px solid #f1d98f;
-  outline-offset: 1px;
-}
-
-.admin-order-date {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  height: 38px;
-  padding: 0 8px;
-  border: 1px solid #ddd9ce;
-  border-radius: 8px;
-  background: #fff;
-}
-
-.admin-order-date span {
-  color: #828a93;
-  font-size: 10.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.admin-order-date input {
-  width: 118px;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: #3f4852;
-  font: 600 12px var(--font-body);
-}
-
-.admin-order-reset {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 34px;
-  padding: 0 10px;
-  border: 1px solid #ddd9ce;
-  border-radius: 7px;
-  background: #fff;
-  color: #6a4a00;
-  font: 700 11.5px var(--font-body);
-  cursor: pointer;
-}
-
-.admin-order-reset:hover {
-  background: #fff6dc;
-  border-color: #d9bf7c;
-}
-
-/* ---------- Sel tabel ---------- */
-.admin-order-results.is-refreshing {
-  opacity: 0.6;
-  transition: opacity 0.15s;
-}
-
-.admin-order-number,
-.admin-order-customer,
-.admin-order-total-cell {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.admin-order-number strong {
-  font-weight: 800;
-  letter-spacing: 0.01em;
-}
-
-.admin-order-number small,
-.admin-order-customer small,
-.admin-order-total-cell small {
-  color: #7c858e;
-  font-size: 11px;
-}
-
-.admin-order-customer strong {
-  font-weight: 700;
-}
-
-.admin-order-customer small {
-  overflow: hidden;
-  max-width: 220px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.admin-order-total-cell {
-  justify-items: end;
-}
-
-.admin-order-total-cell strong {
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-}
-
-.admin-order-tracking {
-  font: 600 11.5px ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: #415668;
-}
-
-.admin-order-detail {
-  height: 30px;
-  padding: 0 11px;
-  border: 1px solid #ddd9ce;
-  border-radius: 7px;
-  background: #fff;
-  color: #3f4852;
-  font: 700 11.5px var(--font-body);
-  cursor: pointer;
-}
-
-.admin-order-detail:hover {
-  background: #f6f3ea;
-  border-color: #cfc6ae;
-}
-
-.admin-orders-empty {
-  display: grid;
-  justify-items: center;
-  gap: 7px;
-  padding: 40px 20px;
-  color: #68717b;
-  text-align: center;
-}
-
-.admin-orders-empty strong {
-  color: #1b2430;
-  font: 600 15px var(--font-head);
-}
-
-.admin-orders-empty span {
-  max-width: 36ch;
-  font-size: 12.5px;
-  line-height: 1.55;
-}
-
-.admin-order-pagination {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 13px 16px;
-  border-top: 1px solid #e8e5dd;
-  background: #fdfcf8;
-  color: #68717b;
-  font-size: 11.5px;
-}
-
-.admin-order-pagination > div {
-  display: flex;
-  gap: 8px;
-}
-
-/* ---------- Detail pesanan ---------- */
-.order-detail {
-  display: grid;
-  gap: 16px;
-}
-
-.order-detail__banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 11px 13px;
-  border: 1px solid #e6e1d5;
-  border-radius: 9px;
-  background: #fbf8f0;
-}
-
-.order-detail__banner > div {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-}
-
-.order-detail__label {
-  color: #7c858e;
-  font-size: 10.5px;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.order-detail__copy {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 30px;
-  padding: 0 10px;
-  border: 1px solid #ddd9ce;
-  border-radius: 7px;
-  background: #fff;
-  color: #505963;
-  font: 700 11px var(--font-body);
-  cursor: pointer;
-}
-
-.order-detail__copy:hover {
-  background: #f6f3ea;
-}
-
-.order-detail__grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 11px;
-}
-
-.order-detail__card {
-  padding: 12px 13px;
-  border: 1px solid #e6e1d5;
-  border-radius: 9px;
-  background: #fff;
-}
-
-.order-detail__card h3,
-.order-detail__items h3,
-.order-detail__tracking h3 {
-  margin: 0 0 8px;
-  font: 600 12px var(--font-head);
-  letter-spacing: 0.01em;
-  color: #3d4651;
-}
-
-.order-detail__card dl {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-}
-
-.order-detail__card dl > div {
-  display: grid;
-  gap: 1px;
-}
-
-.order-detail__card dt {
-  color: #828a93;
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.order-detail__card dd {
-  margin: 0;
-  color: #1b2430;
-  font-size: 12.5px;
-  overflow-wrap: anywhere;
-}
-
-.order-detail__grand {
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-}
-
-.order-detail__items {
-  padding: 12px 13px;
-  border: 1px solid #e6e1d5;
-  border-radius: 9px;
-  background: #fff;
-}
-
-.order-detail__items ul {
-  display: grid;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.order-detail__items li {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px dashed #eae5d8;
-  font-size: 12.5px;
-}
-
-.order-detail__items li:last-child {
-  padding-bottom: 0;
-  border-bottom: 0;
-}
-
-.order-detail__item-name {
-  display: grid;
-  gap: 1px;
-  min-width: 0;
-}
-
-.order-detail__item-name small {
-  color: #7c858e;
-  font-size: 11px;
-}
-
-.order-detail__items li > strong {
-  flex: none;
-  font-variant-numeric: tabular-nums;
-}
-
-.order-detail__item-empty {
-  color: #828a93;
-  font-size: 12px;
-}
-
-.order-detail__totals {
-  display: grid;
-  gap: 4px;
-  margin: 11px 0 0;
-  padding-top: 10px;
-  border-top: 1px solid #ece7dc;
-}
-
-.order-detail__totals > div {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: 12px;
-  color: #5b6470;
-}
-
-.order-detail__totals dt,
-.order-detail__totals dd {
-  margin: 0;
-}
-
-.order-detail__totals dd {
-  font-variant-numeric: tabular-nums;
-}
-
-.order-detail__totals .is-grand {
-  margin-top: 3px;
-  padding-top: 7px;
-  border-top: 1px dashed #e2dccd;
-  color: #1b2430;
-  font-size: 14px;
-  font-weight: 800;
-}
-
-.order-detail__tracking {
-  padding: 12px 13px;
-  border: 1px solid #e6e1d5;
-  border-radius: 9px;
-  background: #fbfaf5;
-}
-
-.order-detail__hint {
-  margin: 0;
-  color: #7c858e;
-  font-size: 11.5px;
-  line-height: 1.5;
-}
-
-.order-tracking-form {
-  display: flex;
-  gap: 8px;
-}
-
-.order-tracking-field {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  flex: 1;
-  min-width: 0;
-  height: 38px;
-  padding: 0 10px;
-  border: 1px solid #d8d4ca;
-  border-radius: 7px;
-  background: #fff;
-  color: #828a93;
-}
-
-.order-tracking-field:focus-within {
-  border-color: #d9b04a;
-  box-shadow: 0 0 0 3px #f6e6b3;
-}
-
-.order-tracking-field input {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: #1b2430;
-  font: 600 12.5px ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-
-/* ---------- Footer dialog ---------- */
-.order-dialog-footer {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 9px;
-  width: 100%;
-}
-
-.order-danger-button {
-  height: 36px;
-  padding: 0 12px;
-  border: 1px solid #e0c8c2;
-  border-radius: 7px;
-  background: #fff;
-  color: #8a453a;
-  font: 700 12px var(--font-body);
-  cursor: pointer;
-}
-
-.order-danger-button:hover:not(:disabled) {
-  background: #fbf1ee;
-}
-
-.order-danger-button:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-/* ---------- Responsif ---------- */
-@media (max-width: 900px) {
-  .order-detail__grid {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  }
-
-  .order-detail__card:last-child {
-    grid-column: 1 / -1;
-  }
-}
-
-@media (max-width: 700px) {
-  .admin-order-toolbar {
-    align-items: stretch;
-  }
-
-  .admin-order-search {
-    flex: 1 1 100%;
-    max-width: none;
-  }
-
-  .admin-order-filter {
-    flex: 1 1 44%;
-  }
-
-  .admin-order-filter select {
-    width: 100%;
-    max-width: none;
-  }
-
-  .admin-order-date {
-    flex: 1 1 44%;
-  }
-
-  .admin-order-date input {
-    width: 100%;
-  }
-
-  .order-detail__grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .order-detail__card:last-child {
-    grid-column: auto;
-  }
-
-  .order-tracking-form {
-    flex-direction: column;
-  }
-
-  .admin-order-pagination {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-}
-
-@media (max-width: 560px) {
-  .admin-order-pagination > div {
-    width: 100%;
-  }
-
-  .admin-order-pagination > div :deep(.admin-button) {
-    flex: 1;
-  }
-
-  .order-dialog-footer {
-    flex-direction: column-reverse;
-  }
-
-  .order-dialog-footer :deep(.admin-button),
-  .order-danger-button {
-    width: 100%;
-  }
-}
-</style>

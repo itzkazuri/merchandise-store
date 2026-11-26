@@ -6,7 +6,7 @@ import { useCart } from '@/composables/useCart'
 import { hasAnyRole, useAuth } from '@/composables/useAuth'
 import { openAuthDialog } from '@/composables/useAuthDialog'
 import { catalogApi } from '@/api/catalog'
-import { decorateProduct, productImageUrl, visualFor } from '@/lib/productVisual'
+import { decorateProduct, imageUrl, productImageUrl, visualFor } from '@/lib/productVisual'
 import { rupiah } from '@/lib/format'
 import type { CatalogProduct } from '@/types/catalog'
 
@@ -39,6 +39,15 @@ function handleCartClick() {
 }
 const userMenuOpen = ref(false)
 const isStaff = computed(() => hasAnyRole(user.value, ['admin', 'staff']))
+const avatarFailed = ref(false)
+const userAvatar = computed(() => {
+  const raw = user.value?.avatar_url || user.value?.avatar
+  return imageUrl(raw)
+})
+
+watch(userAvatar, () => {
+  avatarFailed.value = false
+})
 
 function goTo(path: string) {
   userMenuOpen.value = false
@@ -376,8 +385,19 @@ onBeforeUnmount(() => {
             class="btn bg-white h-9 sm:h-10 px-2 sm:px-3 font-head font-semibold flex items-center gap-1.5 text-xs sm:text-sm"
             @click="userMenuOpen = !userMenuOpen"
           >
-            <span class="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-sun border border-ink grid place-items-center text-[10px] sm:text-xs font-bold uppercase">
-              {{ user?.name?.charAt(0) || 'U' }}
+            <span class="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-sun border border-ink grid place-items-center text-[10px] sm:text-xs font-bold uppercase overflow-hidden shrink-0">
+              <img
+                v-if="userAvatar && !avatarFailed"
+                :src="userAvatar"
+                :alt="user?.name || 'Foto profil'"
+                class="w-full h-full object-cover rounded-full"
+                loading="lazy"
+                decoding="async"
+                @error="avatarFailed = true"
+              />
+              <template v-else>
+                {{ user?.name?.charAt(0) || 'U' }}
+              </template>
             </span>
             <span class="hidden sm:inline max-w-[90px] md:max-w-[120px] truncate">{{ user?.name?.split(' ')[0] }}</span>
           </button>
@@ -387,9 +407,26 @@ onBeforeUnmount(() => {
             v-if="userMenuOpen"
             class="nb absolute right-0 mt-2 w-48 sm:w-52 p-2 z-50 shadow-lg slide-down-enter-active"
           >
-            <div class="px-2 py-1.5 border-b border-soft text-xs font-bold text-ink/65 truncate">
-              {{ user?.email }}
+            <div class="px-2 py-1.5 border-b border-soft text-xs font-bold text-ink/65 truncate flex items-center gap-2">
+              <span class="w-6 h-6 rounded-full bg-sun border border-ink grid place-items-center text-[10px] font-bold uppercase overflow-hidden shrink-0">
+                <img
+                  v-if="userAvatar && !avatarFailed"
+                  :src="userAvatar"
+                  :alt="user?.name || 'Foto profil'"
+                  class="w-full h-full object-cover rounded-full"
+                  loading="lazy"
+                  decoding="async"
+                />
+                <template v-else>
+                  {{ user?.name?.charAt(0) || 'U' }}
+                </template>
+              </span>
+              <div class="min-w-0 flex-1">
+                <p class="font-bold text-ink truncate leading-tight">{{ user?.name }}</p>
+                <p class="text-[10px] font-semibold text-ink/50 truncate">{{ user?.email }}</p>
+              </div>
             </div>
+
             <button
               type="button"
               class="w-full text-left px-2 py-2 mt-1 rounded-lg text-xs sm:text-sm font-semibold flex items-center gap-2 text-ink hover:bg-soft/60 transition-colors cursor-pointer"

@@ -5,12 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "run-p type-check \"build-only {@}\" -- && bun run assets:download && bun run seo:prerender",
+    "build": "run-p type-check \"build-only {@}\" -- && bun run assets:download && bun run build:server && bun run seo:prerender",
     "preview": "vite preview",
     "build-only": "vite build",
     "build:client": "vite build",
     "build:server": "vite build --ssr src/entry-server.ts --outDir dist/server",
-    "build:ssr": "bun run build && bun run build:server",
+    "build:ssr": "bun run build",
     "type-check": "vue-tsc --build",
     "seo:prerender": "bun scripts/prerender-products.ts",
     "assets:download": "bun scripts/download-fonts.ts"

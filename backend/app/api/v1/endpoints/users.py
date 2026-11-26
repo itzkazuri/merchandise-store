@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 from fastapi import status as http_status
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import AdminUser, CurrentUser, DbSession
+from app.core.config import settings
 from app.core.security import hash_password, verify_password
 from app.models import Role, User
 from app.schemas.common import Page
@@ -16,6 +17,8 @@ from app.schemas.user import (
     UserRolesUpdate,
     UserStatusUpdate,
 )
+from app.services.storage import StorageError, upload_avatar_image
+
 
 router = APIRouter(prefix="/users", tags=["users (admin)"])
 
@@ -129,6 +132,12 @@ def update_my_profile(
         current_user.name = clean_name
         updated = True
 
+    if payload.avatar_url is not None:
+        clean_avatar = payload.avatar_url.strip()
+        current_user.avatar_url = clean_avatar if clean_avatar else None
+        updated = True
+
+
     if payload.new_password is not None:
         if not payload.current_password:
             raise HTTPException(
@@ -155,6 +164,57 @@ def update_my_profile(
     db.commit()
     db.refresh(current_user)
     return current_user
+
+
+@router.post(
+    "/me/avatar",
+    response_model=UserOut,
+    status_code=status.HTTP_200_OK,
+    summary="Upload foto profil user sendiri",
+)
+def upload_my_avatar(
+    current_user: CurrentUser,
+    db: DbSession,
+    file: UploadFile = File(..., description="File gambar foto profil (JPG/PNG/WebP/GIF/AVIF)"),
+) -> User:
+    limit = max(1, settings.MAX_UPLOAD_MB) * 1024 * 1024
+    data = file.file.read(limit + 1)
+
+    if not data:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "File gambar kosong.")
+    if len(data) > limit:
+        raise HTTPException(
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            f"Ukuran gambar maksimal {settings.MAX_UPLOAD_MB} MB.",
+        )
+
+    try:
+        stored = upload_avatar_image(data)
+    except StorageError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+    current_user.avatar_url = stored.url
+    db.add(current_user)
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
+@router.delete(
+    "/me/avatar",
+    response_model=UserOut,
+    summary="Hapus foto profil user sendiri",
+)
+def delete_my_avatar(
+    current_user: CurrentUser,
+    db: DbSession,
+) -> User:
+    current_user.avatar_url = None
+    db.add(current_user)
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
 
 
 @router.get("/{user_id}", response_model=UserOut, summary="Detail user (admin)")

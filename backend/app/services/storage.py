@@ -148,3 +148,35 @@ def upload_product_image(data: bytes) -> StoredImage:
         content_type=content_type,
         size=len(data),
     )
+
+
+def upload_avatar_image(data: bytes) -> StoredImage:
+    """Upload bytes foto profil ke bucket dan kembalikan key + URL publik."""
+    detected = detect_image_type(data)
+    if detected is None:
+        raise StorageError("File bukan gambar JPG, PNG, WebP, GIF, atau AVIF yang valid.")
+
+    extension, content_type = detected
+    now = datetime.now(UTC)
+    object_key = f"avatars/{now:%Y/%m}/{uuid4().hex}.{extension}"
+
+    client = _client()
+    try:
+        _ensure_bucket(client)
+        client.put_object(
+            Bucket=settings.S3_BUCKET_PRODUCTS,
+            Key=object_key,
+            Body=data,
+            ContentType=content_type,
+            CacheControl="public, max-age=31536000, immutable",
+        )
+    except (BotoCoreError, ClientError) as exc:
+        raise StorageError("Foto profil gagal diunggah ke object storage.") from exc
+
+    return StoredImage(
+        object_key=object_key,
+        url=public_product_url(object_key),
+        content_type=content_type,
+        size=len(data),
+    )
+

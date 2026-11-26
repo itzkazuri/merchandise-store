@@ -1,5 +1,5 @@
 import { apiRequest, queryString } from './client'
-import type { CartResponse, CheckoutBody, MidtransPayment, Order } from '@/types/order'
+import type { CartResponse, CheckoutBody, MidtransPayment, Order, PaymentSyncResult } from '@/types/order'
 
 export const cartApi = {
   get: () => apiRequest<CartResponse>('/cart'),
@@ -22,7 +22,10 @@ export const paymentsApi = {
   methods: () => apiRequest<{ code: string; name: string; online: boolean; description?: string }[]>('/payments/methods', { auth: false }),
   createMidtrans: (orderId: number | string) =>
     apiRequest<MidtransPayment>(`/payments/midtrans/${orderId}`, { method: 'POST' }),
+  syncMidtrans: (orderId: number | string) =>
+    apiRequest<PaymentSyncResult>(`/payments/midtrans/${orderId}/sync`, { method: 'POST' }),
 }
+
 
 /**
  * Keranjang di storefront disimpan lokal (localStorage). Backend menghitung

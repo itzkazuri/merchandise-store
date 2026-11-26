@@ -23,7 +23,7 @@ useSeo({
 
 const route = useRoute()
 const router = useRouter()
-const { adminLogin, loading, error, user } = useAuth()
+const { adminLogin, loading, error, user, fetchProfile } = useAuth()
 const { showToast } = useToast()
 
 const uid = useId()
@@ -43,12 +43,21 @@ onMounted(async () => {
     localError.value = 'Akun Anda tidak memiliki hak akses administrator atau sesi telah kedaluwarsa.'
   }
 
-  // Jika sudah login dan memiliki akses admin/staff, langsung arahkan ke dashboard admin
-  if (user.value && hasAnyRole(user.value, ['admin', 'staff'])) {
-    const target = typeof route.query.redirect === 'string' ? route.query.redirect : '/admin'
-    await router.replace(target)
+  const profile = user.value || (await fetchProfile())
+  if (profile) {
+    if (hasAnyRole(profile, ['admin', 'staff'])) {
+      const target = typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/admin')
+        ? route.query.redirect
+        : '/admin'
+      await router.replace(target)
+    } else {
+      // Tolak akses jika akun Google / customer yang sudah login dan lempar ke halaman depan
+      showToast('Akses ditolak: Akun Google tidak memiliki izin administrator')
+      await router.replace('/')
+    }
   }
 })
+
 
 async function handleAdminSubmit() {
   if (loading.value) return

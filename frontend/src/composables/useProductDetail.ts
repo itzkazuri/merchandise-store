@@ -1,4 +1,4 @@
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { catalogApi } from '@/api/catalog'
 import { ApiError } from '@/api/client'
@@ -6,6 +6,7 @@ import { useAuth } from '@/composables/useAuth'
 import { openAuthDialog } from '@/composables/useAuthDialog'
 import { useCart } from '@/composables/useCart'
 import { useToast } from '@/composables/useToast'
+import { getInitialProduct } from '@/lib/appState'
 import { catalogImageUrl, decorateProduct, primaryImage, productImageUrl, productSeries, visualForCategory } from '@/lib/productVisual'
 import { findDemoProduct, loadDemoCatalog } from '@/lib/demoCatalog'
 import type { CatalogProduct } from '@/types/catalog'
@@ -17,13 +18,17 @@ export function useProductDetail() {
   const { isAuthenticated } = useAuth()
   const { showToast } = useToast()
 
-  const product = ref<CatalogProduct | null>(null)
+  // Produk hasil prerender dipakai sebagai state awal supaya hidrasi cocok.
+  const initialSlug = String(route.params.slug || '')
+  const seededProduct = getInitialProduct(initialSlug)
+
+  const product = ref<CatalogProduct | null>(seededProduct ? decorateProduct(seededProduct) : null)
   const related = ref<CatalogProduct[]>([])
-  const loading = ref(true)
+  const loading = ref(!seededProduct)
   const error = ref('')
   const usingFallback = ref(false)
   const qty = ref(1)
-  const liked = ref(false)
+  const liked = ref(Boolean(seededProduct?.isLiked ?? seededProduct?.is_liked))
 
   const maxStock = computed(() => Math.max(0, Number(product.value?.stock ?? 0)))
   const soldOut = computed(() => maxStock.value <= 0)
@@ -199,7 +204,43 @@ export function useProductDetail() {
     }
   }
 
-  watch(() => route.params.slug, loadProduct, { immediate: true })
+  /**
+   * Setelah hidrasi selesai, segarkan data dari API tanpa mengosongkan layar.
+   * Kalau gagal, data hasil prerender tetap ditampilkan.
+   */
+  async function refreshSeeded(slug: string) {
+    try {
+      const data = await catalogApi.product(slug)
+      if (String(route.params.slug || '') !== slug) return
+      product.value = decorateProduct(data)
+      liked.value = Boolean(data.is_liked || data.isLiked)
+      await loadRelated(product.value)
+    } catch {
+      // Diamkan: data hasil prerender masih valid untuk ditampilkan.
+    }
+  }
+
+  // Lewati pemuatan awal hanya untuk slug yang sudah punya data prerender,
+  // supaya render pertama di client identik dengan HTML server.
+  let pendingSeedSlug: string | null = seededProduct ? initialSlug : null
+
+  watch(
+    () => route.params.slug,
+    (slug) => {
+      if (pendingSeedSlug && String(slug) === pendingSeedSlug) {
+        pendingSeedSlug = null
+        return
+      }
+      pendingSeedSlug = null
+      void loadProduct()
+    },
+    { immediate: true },
+  )
+
+  onMounted(() => {
+    if (!seededProduct) return
+    void refreshSeeded(initialSlug)
+  })
 
   return {
     product,

@@ -230,7 +230,7 @@ onMounted(() => {
           <div class="flex flex-wrap items-start justify-between gap-2">
             <div class="min-w-0">
               <RouterLink
-                :to="`/pesanan/${order.id}`"
+                :to="`/pesanan/${order.order_number}`"
                 class="font-head text-sm sm:text-base font-bold text-ink hover:underline decoration-2 underline-offset-2"
               >
                 {{ order.order_number }}
@@ -324,14 +324,14 @@ onMounted(() => {
 
             <div class="flex items-center gap-1.5 sm:gap-2">
               <RouterLink
-                :to="`/pesanan/${order.id}`"
+                :to="`/pesanan/${order.order_number}`"
                 class="btn bg-white text-ink h-8 px-3 text-[11px] sm:text-xs font-head font-semibold"
               >
                 Detail
               </RouterLink>
               <RouterLink
                 v-if="canPayNow(order)"
-                :to="`/pesanan/${order.id}`"
+                :to="`/pesanan/${order.order_number}`"
                 class="btn bg-sun text-ink h-8 px-3 text-[11px] sm:text-xs font-head font-semibold inline-flex items-center gap-1"
               >
                 <CreditCard :size="12" /> Bayar

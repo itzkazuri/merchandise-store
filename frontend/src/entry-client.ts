@@ -1,13 +1,18 @@
 import { createHead } from '@unhead/vue/client'
 import { createMochibakoApp } from './app'
 import { initAuth } from './composables/useAuth'
+import { hydrateAppStateFromDocument } from './lib/appState'
 import './style.css'
 import './storefront.css'
 
 /**
  * Entry client untuk build SSR (atau SPA biasa).
  * `createSSRApp` + `app.mount` otomatis hydrate bila HTML sudah dirender server.
+ *
+ * State hasil prerender dibaca sebelum aplikasi dibuat agar render pertama
+ * sama persis dengan HTML server.
  */
+hydrateAppStateFromDocument()
 initAuth()
 
 const { app, router } = createMochibakoApp({ ssr: true })

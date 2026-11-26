@@ -45,5 +45,7 @@ class UserCreate(BaseModel):
 
 class UserProfileUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=100)
+    avatar_url: str | None = Field(default=None, max_length=500)
     current_password: str | None = Field(default=None)
     new_password: str | None = Field(default=None, min_length=8, max_length=128)
+

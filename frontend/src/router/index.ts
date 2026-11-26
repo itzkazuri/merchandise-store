@@ -32,7 +32,7 @@ export const routes: RouteRecordRaw[] = [
       meta: { requiresAuth: true, noindex: true },
     },
     {
-      path: '/pesanan/:id',
+      path: '/pesanan/:orderNumber',
       name: 'order-detail',
       component: () => import('@/views/OrderDetailView.vue'),
       meta: { requiresAuth: true, noindex: true },
@@ -115,12 +115,16 @@ export function createAppRouter(
   router.beforeEach(async (to) => {
     const auth = useAuth()
 
-    // 1. Jika sudah login sebagai staf/admin dan membuka /admin/login, langsung ke panel admin.
+    // 1. Jika membuka /admin/login:
     if (to.path === '/admin/login') {
       if (auth.accessToken.value) {
         const profile = await auth.fetchProfile()
-        if (profile && hasAnyRole(profile, ['admin', 'staff'])) {
-          return { name: 'admin-dashboard' }
+        if (profile) {
+          if (hasAnyRole(profile, ['admin', 'staff'])) {
+            return { name: 'admin-dashboard' }
+          }
+          // Tolak akun Google / pengguna non-staf dan lempar ke halaman depan
+          return { path: '/' }
         }
       }
       return true
@@ -133,10 +137,15 @@ export function createAppRouter(
       }
       const profile = await auth.fetchProfile()
       if (!profile || !hasAnyRole(profile, ['admin', 'staff'])) {
+        // Jika sudah login tetapi akun Google / bukan staf, tolak dan lempar ke halaman depan
+        if (profile) {
+          return { path: '/' }
+        }
         return { path: '/admin/login', query: { redirect: to.fullPath, error: 'unauthorized' } }
       }
       return true
     }
+
 
     // 3. Route publik pengguna yang membutuhkan autentikasi (keranjang, checkout, pesanan).
     if (!to.meta.requiresAuth) return true

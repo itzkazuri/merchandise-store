@@ -1,6 +1,7 @@
+import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 interface ProductImage {
   object_key: string
@@ -71,7 +72,21 @@ function asJsonLd(value: unknown): string {
   return JSON.stringify(value).replace(/</g, '\\u003c')
 }
 
-function renderedHead(template: string, product: CatalogProduct, canonical: string, image: string | null, displayImage: string | null, imageSrcSet?: string): string {
+function stateScript(state: unknown): string {
+  return `<script type="application/json" id="mochibako-state">${asJsonLd(state)}</script>`
+}
+
+function renderedHead(
+  template: string,
+  product: CatalogProduct,
+  canonical: string,
+  image: string | null,
+  displayImage: string | null,
+  imageSrcSet: string | undefined,
+  appHtml: string | null,
+  state: unknown,
+  teleportBody = '',
+): string {
   const title = `${product.name} · Mochibako`
   const description = product.description?.trim()
     || `Beli ${product.name} di Mochibako. Lihat harga dan ketersediaan produk.`
@@ -111,11 +126,19 @@ function renderedHead(template: string, product: CatalogProduct, canonical: stri
     `<script type="application/ld+json">${asJsonLd(ld)}</script>`,
   ].join('\n    ')
 
+  const body = appHtml
+    ? `<div id="app">${appHtml}</div>`
+    : `<div id="app"><main><h1>${escapeHtml(product.name)}</h1>${displayImage ? `<img src="${escapeHtml(displayImage)}"${imageSrcSet ? ` srcset="${escapeHtml(imageSrcSet)}" sizes="(max-width: 1024px) 92vw, 560px"` : ''} alt="${escapeHtml(product.images?.find((item) => item.is_primary)?.alt_text || product.name)}" width="960" height="960" fetchpriority="high">` : ''}<p>${escapeHtml(description)}</p><p>Harga: Rp${new Intl.NumberFormat('id-ID').format(Number(product.price))}</p><p>${Number(product.stock) > 0 ? 'Tersedia' : 'Stok habis'}</p><a href="/">Lihat produk lainnya di Mochibako</a></main></div>`
+
   return template
     .replace(/<title>[\s\S]*?<\/title>/i, `<title>${escapeHtml(title)}</title>`)
     .replace(/<meta\s+name="description"[^>]*>/i, '')
     .replace('</head>', `    ${tags}\n  </head>`)
-    .replace('<div id="app"></div>', `<div id="app"><main><h1>${escapeHtml(product.name)}</h1>${displayImage ? `<img src="${escapeHtml(displayImage)}"${imageSrcSet ? ` srcset="${escapeHtml(imageSrcSet)}" sizes="(max-width: 1024px) 92vw, 560px"` : ''} alt="${escapeHtml(product.images?.find((item) => item.is_primary)?.alt_text || product.name)}" width="960" height="960" fetchpriority="high">` : ''}<p>${escapeHtml(description)}</p><p>Harga: Rp${new Intl.NumberFormat('id-ID').format(Number(product.price))}</p><p>${Number(product.stock) > 0 ? 'Tersedia' : 'Stok habis'}</p><a href="/">Lihat produk lainnya di Mochibako</a></main></div>`)
+    .replace('<div id="app"></div>', `${stateScript(state)}${body}`)
+    // Konten Teleport harus jadi anak pertama <body>. Vue memulai hidrasi
+    // teleport dari `body.firstChild`; kalau #app ada di depan, container
+    // aplikasi ikut dianggap konten teleport dan terhapus.
+    .replace(/(<body[^>]*>)/i, `$1${teleportBody}`)
 }
 
 function xmlEscape(value: string): string {
@@ -157,6 +180,22 @@ async function main() {
   try {
     const products = await fetchProducts()
     const template = await readFile(join(outDir, 'index.html'), 'utf8')
+
+    // Render HTML aplikasi asli (bukan placeholder) supaya hidrasi di browser
+    // tidak menghasilkan mismatch. Butuh hasil `build:server`.
+    const serverEntry = join(outDir, 'server', 'entry-server.js')
+    let renderApp: ((url: string, state: unknown) => Promise<{ appHtml: string; teleports: Record<string, string> }>) | null = null
+    if (existsSync(serverEntry)) {
+      try {
+        const module = await import(pathToFileURL(serverEntry).href)
+        if (typeof module.render === 'function') renderApp = module.render
+      } catch (error) {
+        console.warn(`[SEO prerender] Gagal memuat entry SSR: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    } else {
+      console.warn('[SEO prerender] dist/server/entry-server.js tidak ditemukan; memakai markup placeholder.')
+    }
+
     const sitemapEntries = [`  <url><loc>${xmlEscape(`${siteUrl}/`)}</loc></url>`]
     let rendered = 0
 
@@ -170,11 +209,23 @@ async function main() {
       const imageSrcSet = sourceImage
         ? [320, 640, 960].map((width) => `${optimizedImage(sourceImage, width)} ${width}w`).join(', ')
         : undefined
+      const state = { product: { slug, product } }
+      let appHtml: string | null = null
+      let teleportBody = ''
+      if (renderApp) {
+        try {
+          const result = await renderApp(path, state)
+          appHtml = result.appHtml
+          teleportBody = result.teleports?.body ?? ''
+        } catch (error) {
+          console.warn(`[SEO prerender] Render SSR gagal untuk ${path}: ${error instanceof Error ? error.message : String(error)}`)
+        }
+      }
       const pageDir = join(outDir, 'produk', slug)
       await mkdir(pageDir, { recursive: true })
       await writeFile(
         join(pageDir, 'index.html'),
-        renderedHead(template, product, canonical, sourceImage, displayImage, imageSrcSet),
+        renderedHead(template, product, canonical, sourceImage, displayImage, imageSrcSet, appHtml, state, teleportBody),
       )
       const lastmod = product.updated_at ? `\n    <lastmod>${xmlEscape(product.updated_at.slice(0, 10))}</lastmod>` : ''
       const imageEntry = sourceImage

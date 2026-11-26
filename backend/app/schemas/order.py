@@ -137,6 +137,21 @@ class MidtransPaymentOut(BaseModel):
     snap_js_url: str
 
 
+class PaymentSyncOut(BaseModel):
+    order_number: str
+    status: OrderStatus
+    payment_method: PaymentMethod
+    is_settled: bool
+    transaction_status: str | None = None
+    fraud_status: str | None = None
+    transaction_id: str | None = None
+    payment_type: str | None = None
+    gross_amount: Decimal | None = None
+    message: str
+    order: OrderOut | None = None
+
+
+
 class PosOrderItem(BaseModel):
     product_id: int = Field(gt=0)
     quantity: int = Field(default=1, ge=1, le=999)

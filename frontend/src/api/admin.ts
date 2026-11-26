@@ -6,6 +6,7 @@ export const adminApi = {
   setOrderStatus: (id: number | string, status: string) => apiRequest(`/admin/orders/${id}/status`, { method: 'PATCH', body: { status } }),
   setTracking: (id: number | string, tracking_number: string) => apiRequest(`/admin/orders/${id}/tracking`, { method: 'PATCH', body: { tracking_number } }),
   markPaid: (id: number | string) => apiRequest(`/admin/orders/${id}/mark-paid`, { method: 'PATCH' }),
+  syncMidtrans: (id: number | string) => apiRequest(`/payments/midtrans/${id}/sync`, { method: 'POST' }),
   posOrder: (body: Record<string, unknown>) => apiRequest('/admin/pos/orders', { method: 'POST', body }),
   revenue: (params: Record<string, unknown> = {}) => apiRequest(`/admin/revenue${queryString(params)}`),
   createProduct: (body: Record<string, unknown>) => apiRequest('/products', { method: 'POST', body }),
@@ -26,7 +27,13 @@ export const adminApi = {
   users: (params: Record<string, unknown> = {}) => apiRequest(`/users${queryString(params)}`),
   user: (id: number | string) => apiRequest(`/users/${id}`),
   createUser: (body: { name: string; email: string; password: string; role: string }) => apiRequest('/users', { method: 'POST', body }),
-  updateMyProfile: (body: { name?: string; current_password?: string; new_password?: string }) => apiRequest('/users/me', { method: 'PATCH', body }),
+  updateMyProfile: (body: { name?: string; current_password?: string; new_password?: string; avatar_url?: string | null }) => apiRequest('/users/me', { method: 'PATCH', body }),
+  uploadAvatar: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return apiRequest('/users/me/avatar', { method: 'POST', body: form })
+  },
+  removeAvatar: () => apiRequest('/users/me/avatar', { method: 'DELETE' }),
   setUserRoles: (id: number | string, roles: string[]) => apiRequest(`/users/${id}/roles`, { method: 'PATCH', body: { roles } }),
   setUserStatus: (id: number | string, body: Record<string, unknown>) => apiRequest(`/users/${id}/status`, { method: 'PATCH', body }),
   roles: () => apiRequest('/roles'),

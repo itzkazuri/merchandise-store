@@ -17,6 +17,8 @@ from app.schemas.order import (
     OrderStatusUpdate,
     TrackingUpdate,
 )
+from app.services.midtrans import cancel_midtrans_transaction
+
 
 router = APIRouter(prefix="/admin/orders", tags=["admin orders"])
 
@@ -95,7 +97,7 @@ def get_order(order_id: int, staff: StaffUser, db: DbSession) -> OrderOut:
     response_model=OrderOut,
     summary="Ubah status pesanan (admin/staff)",
 )
-def update_order_status(
+async def update_order_status(
     order_id: int,
     payload: OrderStatusUpdate,
     staff: StaffUser,
@@ -117,11 +119,14 @@ def update_order_status(
 
     if payload.status == "cancelled":
         restock_order(db, order)
+        if order.payment_method == "midtrans":
+            await cancel_midtrans_transaction(order.order_number)
 
     order.status = payload.status
     db.commit()
     db.refresh(order)
     return serialize_order(order)
+
 
 
 @router.patch(

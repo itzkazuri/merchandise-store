@@ -18,7 +18,7 @@ Backend API untuk Anime Merchandise Store.
 ```bash
 cd backend
 uv sync                      # install dependency
-uv run uvicorn app.main:app --reload --port 8000
+uv run main.py                # preflight dependency + start API
 ```
 
 - API: http://localhost:8000
@@ -197,8 +197,8 @@ akun customer (`user_id` null).
 | Method | Path | Akses | Keterangan |
 |---|---|---|---|
 | GET | `/orders` | login | Riwayat belanja sendiri (filter `status`) |
-| GET | `/orders/{id}` | login | Detail pesanan sendiri |
-| POST | `/orders/{id}/cancel` | login | Batalkan pesanan yang belum dibayar |
+| GET | `/orders/{order_number}` | login | Detail pesanan sendiri (pakai nomor acak `INV-YYYYMMDD-XXXXXXXX`, bukan id) |
+| POST | `/orders/{order_number}/cancel` | login | Batalkan pesanan yang belum dibayar |
 | GET | `/admin/orders` | staff, admin | Semua pesanan (filter status, metode, tanggal, `q`) |
 | GET | `/admin/orders/{id}` | staff, admin | Detail pesanan |
 | PATCH | `/admin/orders/{id}/status` | staff, admin | Ubah status pesanan |
@@ -207,6 +207,11 @@ akun customer (`user_id` null).
 
 Alur status: `pending_payment → paid → processing → shipped → completed`
 (dapat dibatalkan ke `cancelled` selama belum dikirim; stok otomatis kembali).
+
+Nomor pesanan publik dibuat acak (`INV-YYYYMMDD-` + 8 karakter hex) dan dipakai
+untuk URL pelanggan, misalnya `/pesanan/INV-20261123-784DA9`. Endpoint pelanggan
+hanya mencari berdasarkan `order_number` milik akun yang login; pesanan akun lain
+dijawab `404` agar keberadaannya tidak bocor. Endpoint admin tetap memakai `id`.
 
 Pendapatan dihitung dari `subtotal` pesanan berstatus `paid`, `processing`,
 `shipped`, atau `completed` — ongkir tidak dihitung sebagai pendapatan toko.
@@ -253,10 +258,19 @@ uv run python -m app.scripts.create_admin \
 - Midtrans butuh `MIDTRANS_SERVER_KEY` dan `MIDTRANS_CLIENT_KEY` **asli** dari
   dashboard Midtrans. Selama masih berisi `xxxxxxxx`, endpoint
   `POST /payments/midtrans/{order_id}` mengembalikan **503**.
-- Set `MIDTRANS_NOTIFICATION_URL` ke
-  `https://domain-kamu/api/v1/payments/midtrans/notification` di dashboard Midtrans.
-  Webhook tidak memakai JWT; keasliannya diverifikasi lewat `signature_key`
-  (`sha512(order_id + status_code + gross_amount + server_key)`).
+- Untuk development lokal, frontend memakai `http://localhost:5173` dan API
+  `http://localhost:8000/api/v1`. Endpoint notifikasinya adalah
+  `http://localhost:8000/api/v1/payments/midtrans/notification`, tetapi jangan
+  masukkan alamat localhost ke dashboard Midtrans karena tidak dapat dijangkau
+  dari internet.
+- Saat backend sudah di-host, set `MIDTRANS_NOTIFICATION_URL` dan Midtrans
+  Dashboard → Settings → Configuration → Payment Notification URL ke alamat
+  HTTPS publik yang stabil:
+  `https://api.domain-kamu.com/api/v1/payments/midtrans/notification`.
+  Webhook masuk langsung ke FastAPI (bukan Vue/Vite), tidak memakai JWT, dan
+  diverifikasi lewat `signature_key`
+  (`sha512(order_id + status_code + gross_amount + server_key)`). Pembayaran
+  berstatus `settlement` atau `capture` akan menandai pesanan sebagai `paid`.
 - Token hasil login Google dikirim ke frontend lewat query string; di production
   sebaiknya frontend langsung menyimpannya ke memori/httpOnly cookie lalu
   membersihkan URL (`history.replaceState`).

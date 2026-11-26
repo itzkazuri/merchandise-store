@@ -10,6 +10,7 @@ import {
   Loader2,
   MapPin,
   Package,
+  RefreshCw,
   ShieldCheck,
   Store,
   Truck,
@@ -17,7 +18,7 @@ import {
 } from 'lucide-vue-next'
 import StoreShell from '@/components/StoreShell.vue'
 import { ordersApi, paymentsApi } from '@/api/store'
-import { payWithSnap } from '@/api/midtrans'
+import { payWithSnap, preloadSnap } from '@/api/midtrans'
 import { ApiError } from '@/api/client'
 import { longDateTime, rupiah, shortDate } from '@/lib/format'
 import type { Order } from '@/types/order'
@@ -36,6 +37,7 @@ const error = ref('')
 const notice = ref('')
 const payError = ref('')
 const paying = ref(false)
+const verifyingPayment = ref(false)
 const cancelling = ref(false)
 
 const STATUS: Record<string, { label: string; tone: string }> = {
@@ -68,13 +70,19 @@ const queryNotice = computed<{ tone: 'ok' | 'warn' | 'error'; text: string } | n
     return { tone: 'ok', text: 'Pesanan berhasil dibuat. Simpan nomor pesanan ini untuk pengecekan.' }
   }
   const bayar = String(route.query.bayar || '')
-  if (bayar === 'sukses') return { tone: 'ok', text: 'Pembayaran berhasil dikirim ke Midtrans. Status akan diperbarui otomatis.' }
+  if (bayar === 'verifikasi' || bayar === 'sukses') {
+    if (order.value?.status === 'paid') {
+      return { tone: 'ok', text: 'Pembayaran terverifikasi lunas oleh Midtrans.' }
+    }
+    return { tone: 'warn', text: 'Memeriksa verifikasi pembayaran dengan Midtrans. Jika sudah bayar, klik "Cek Status Pembayaran".' }
+  }
   if (bayar === 'pending') return { tone: 'warn', text: 'Pembayaran masih menunggu penyelesaian. Selesaikan sesuai instruksi Midtrans.' }
   if (bayar === 'gagal') return { tone: 'error', text: 'Pembayaran gagal atau dibatalkan. Kamu bisa mencoba bayar lagi dari halaman ini.' }
   if (bayar === 'belum') return { tone: 'warn', text: 'Jendela pembayaran ditutup sebelum selesai. Pesanan tetap tersimpan dan bisa dibayar lagi.' }
   if (bayar === 'manual') return { tone: 'warn', text: 'Pembayaran online belum bisa dibuka otomatis. Pesananmu tersimpan — coba tombol Bayar sekarang atau hubungi admin.' }
   return null
 })
+
 
 const deliveryLabel = computed(() => {
   if (!order.value) return '—'
@@ -93,7 +101,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    order.value = await ordersApi.get(String(route.params.id))
+    order.value = await ordersApi.get(String(route.params.orderNumber))
   } catch (cause) {
     error.value = errorMessage(cause)
   } finally {
@@ -111,6 +119,30 @@ async function copyNumber() {
   }
 }
 
+async function checkPaymentStatus(interactive = false) {
+  if (!order.value || verifyingPayment.value) return
+  verifyingPayment.value = true
+  payError.value = ''
+  if (interactive) notice.value = ''
+  try {
+    const res = await paymentsApi.syncMidtrans(order.value.id)
+    if (res.order) {
+      order.value = res.order
+    }
+    if (res.is_settled) {
+      notice.value = 'Pembayaran terverifikasi lunas oleh Midtrans.'
+    } else if (interactive) {
+      notice.value = res.message || 'Pembayaran belum terkonfirmasi oleh Midtrans.'
+    }
+  } catch (cause) {
+    if (interactive) {
+      payError.value = errorMessage(cause)
+    }
+  } finally {
+    verifyingPayment.value = false
+  }
+}
+
 async function payNow() {
   if (!order.value || paying.value) return
   paying.value = true
@@ -119,12 +151,16 @@ async function payNow() {
   try {
     const payment = await paymentsApi.createMidtrans(order.value.id)
     await payWithSnap(payment, {
-      onSuccess: () => {
-        notice.value = 'Pembayaran berhasil. Status pesanan sedang diperbarui…'
-        window.setTimeout(load, 1800)
+      onSuccess: async () => {
+        notice.value = 'Memverifikasi status pembayaran dengan Midtrans…'
+        await checkPaymentStatus(false)
+        if (order.value?.status !== 'paid') {
+          window.setTimeout(() => checkPaymentStatus(false), 2000)
+        }
       },
       onPending: () => {
         notice.value = 'Pembayaran menunggu penyelesaian. Cek kembali beberapa saat lagi.'
+        window.setTimeout(() => checkPaymentStatus(false), 2000)
       },
       onError: () => {
         payError.value = 'Pembayaran gagal atau ditolak Midtrans. Coba lagi.'
@@ -143,7 +179,7 @@ async function cancelOrder() {
   cancelling.value = true
   payError.value = ''
   try {
-    order.value = await ordersApi.cancel(order.value.id)
+    order.value = await ordersApi.cancel(order.value.order_number)
     notice.value = 'Pesanan dibatalkan dan stok dikembalikan.'
   } catch (cause) {
     payError.value = errorMessage(cause)
@@ -152,7 +188,17 @@ async function cancelOrder() {
   }
 }
 
-onMounted(load)
+onMounted(async () => {
+  preloadSnap()
+  await load()
+  const bayar = String(route.query.bayar || '')
+  if (order.value && order.value.payment_method === 'midtrans') {
+    if (bayar === 'verifikasi' || bayar === 'sukses' || (order.value.status === 'pending_payment' && bayar)) {
+      await checkPaymentStatus(false)
+    }
+  }
+})
+
 </script>
 
 <template>
@@ -308,6 +354,10 @@ onMounted(load)
                 </h2>
                 <dl class="mt-2 space-y-1.5 text-[11.5px]">
                   <div><dt class="font-extrabold uppercase tracking-wide text-ink/40 text-[9.5px]">Metode</dt><dd class="font-semibold">{{ paymentLabel }}</dd></div>
+                  <div v-if="order.midtrans_transaction_id">
+                    <dt class="font-extrabold uppercase tracking-wide text-ink/40 text-[9.5px]">ID Transaksi Midtrans</dt>
+                    <dd class="font-mono text-[11px] font-bold text-ink/80">{{ order.midtrans_transaction_id }}</dd>
+                  </div>
                   <div>
                     <dt class="font-extrabold uppercase tracking-wide text-ink/40 text-[9.5px]">Dibayar</dt>
                     <dd class="font-semibold">{{ order.paid_at ? shortDate(order.paid_at) : 'Belum dibayar' }}</dd>
@@ -322,21 +372,32 @@ onMounted(load)
           <aside class="nb p-4 sm:p-5 lg:sticky lg:top-24">
             <h2 class="font-head text-base font-bold">Langkah berikutnya</h2>
 
-            <div v-if="order.status === 'pending_payment' && order.payment_method === 'midtrans'" class="mt-2.5">
+            <div v-if="order.status === 'pending_payment' && order.payment_method === 'midtrans'" class="mt-2.5 space-y-2">
               <p class="text-[11px] font-semibold leading-snug text-ink/60">
                 Selesaikan pembayaran supaya pesanan bisa diproses. Kamu bisa memilih QRIS, VA, atau e-wallet di halaman Midtrans.
               </p>
               <button
                 type="button"
-                class="btn bg-ink text-bg w-full mt-3 h-11 font-head font-semibold text-sm"
-                :disabled="paying"
+                class="btn bg-ink text-bg w-full h-11 font-head font-semibold text-sm"
+                :disabled="paying || verifyingPayment"
                 @click="payNow"
               >
                 <Loader2 v-if="paying" :size="16" class="mr-1.5 animate-spin" />
                 <CreditCard v-else :size="16" class="mr-1.5" />
                 {{ paying ? 'Membuka pembayaran…' : 'Bayar sekarang' }}
               </button>
+              <button
+                type="button"
+                class="btn bg-white border-2 border-ink text-ink w-full h-9 font-head font-semibold text-xs hover:bg-ink/5"
+                :disabled="verifyingPayment || paying"
+                @click="checkPaymentStatus(true)"
+              >
+                <Loader2 v-if="verifyingPayment" :size="14" class="mr-1.5 animate-spin" />
+                <RefreshCw v-else :size="14" class="mr-1.5" />
+                {{ verifyingPayment ? 'Memeriksa Midtrans…' : 'Cek Status Pembayaran' }}
+              </button>
             </div>
+
 
             <div v-else-if="order.status === 'pending_payment'" class="mt-2.5">
               <p class="flex items-start gap-1.5 rounded-lg bg-sun/25 px-2.5 py-2 text-[11px] font-semibold leading-snug text-ink/70">

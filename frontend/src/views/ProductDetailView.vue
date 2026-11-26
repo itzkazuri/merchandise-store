@@ -34,6 +34,7 @@ const {
 useHead(() => {
   const current = product.value
   const isDemo = usingFallback.value
+  const missing = !current && Boolean(error.value)
   const title = current ? `${current.name} · Mochibako` : 'Detail Produk · Mochibako'
   const description =
     current?.description?.trim() ||
@@ -72,7 +73,8 @@ useHead(() => {
     title,
     meta: [
       { name: 'description', content: description },
-      { name: 'robots', content: isDemo ? 'noindex,nofollow,noarchive' : 'index,follow' },
+      { name: 'robots', content: isDemo || missing ? 'noindex,nofollow,noarchive' : 'index,follow' },
+      { name: 'googlebot', content: isDemo || missing ? 'noindex,nofollow,noarchive' : 'index,follow' },
       { property: 'og:type', content: 'product' },
       { property: 'og:site_name', content: 'Mochibako' },
       { property: 'og:title', content: title },
@@ -88,7 +90,7 @@ useHead(() => {
       { name: 'twitter:description', content: description },
       ...(image ? [{ name: 'twitter:image', content: image }] : []),
     ],
-    link: [{ rel: 'canonical', href: canonical }],
+    link: current ? [{ rel: 'canonical', href: canonical }] : [],
     script: jsonLd
       ? [{ type: 'application/ld+json', innerHTML: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }]
       : [],
