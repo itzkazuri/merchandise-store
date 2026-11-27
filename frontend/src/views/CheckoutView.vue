@@ -21,6 +21,8 @@ import { useSeo } from '@/composables/useSeo'
 import { ordersApi, paymentsApi, syncCartToServer } from '@/api/store'
 import { payWithSnap, preloadSnap } from '@/api/midtrans'
 import { ApiError } from '@/api/client'
+import { isNetworkError } from '@/api/errors'
+import { useConnectivity } from '@/lib/connectivity'
 import { rupiah } from '@/lib/format'
 import type { CheckoutBody, Order } from '@/types/order'
 import type { DeliveryMethod, PaymentMethod } from '@/types/order'
@@ -32,6 +34,7 @@ useSeo({
 
 const router = useRouter()
 const { user } = useAuth()
+const { apiOnline } = useConnectivity()
 const { cartLines, cartCount, cartTotal, clearCart } = useCart()
 
 const recipientName = ref('')
@@ -103,6 +106,10 @@ function errorMessage(cause: unknown) {
 async function submit() {
   submitError.value = ''
   if (!validate()) return
+  if (!apiOnline.value) {
+    submitError.value = 'Kamu sedang offline. Sambungkan internet lalu coba checkout lagi — keranjangmu tetap tersimpan.'
+    return
+  }
   if (!cartLines.value.length) {
     router.replace('/keranjang')
     return
@@ -127,7 +134,9 @@ async function submit() {
     order = await ordersApi.checkout(body)
     clearCart()
   } catch (cause) {
-    submitError.value = errorMessage(cause)
+    submitError.value = isNetworkError(cause)
+      ? 'Koneksi ke server terputus saat membuat pesanan. Cek halaman Pesanan dulu sebelum mencoba checkout lagi supaya pesanan tidak dobel.'
+      : errorMessage(cause)
     step.value = 'idle'
     return
   }

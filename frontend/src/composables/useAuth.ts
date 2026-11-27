@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue'
 import { authApi } from '@/api/auth'
+import { ApiError, isNetworkError } from '@/api/errors'
 
 export interface AuthUser {
   id: number
@@ -13,6 +14,8 @@ export interface AuthUser {
 }
 
 const STORAGE_KEY = import.meta.env.VITE_TOKEN_STORAGE_KEY || 'merch.auth'
+const PROFILE_CACHE_KEY = 'mochibako.auth-profile.v1'
+const PROFILE_CACHE_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 7
 export const GOOGLE_LOGIN_URL = authApi.googleLoginUrl
 
 const user = ref<AuthUser | null>(null)
@@ -34,11 +37,59 @@ export function initAuth() {
 function clearTokens() {
   accessToken.value = null
   user.value = null
+  clearCachedProfile()
   try {
     localStorage.removeItem(STORAGE_KEY)
   } catch {
     // ignore
   }
+}
+
+/**
+ * Simpan profil terakhir (tanpa token) supaya sesi tetap terbaca saat offline.
+ * Cookie sesi tetap HttpOnly dan tidak pernah disalin ke localStorage.
+ */
+function readCachedProfile(): AuthUser | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(PROFILE_CACHE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { data?: AuthUser; savedAt?: number }
+    if (!parsed?.data || typeof parsed.savedAt !== 'number') return null
+    if (Date.now() - parsed.savedAt > PROFILE_CACHE_MAX_AGE_MS) {
+      localStorage.removeItem(PROFILE_CACHE_KEY)
+      return null
+    }
+    return parsed.data
+  } catch {
+    return null
+  }
+}
+
+function writeCachedProfile(profile: AuthUser) {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(
+      PROFILE_CACHE_KEY,
+      JSON.stringify({ data: profile, savedAt: Date.now() }),
+    )
+  } catch {
+    // Storage penuh / diblokir; abaikan.
+  }
+}
+
+function clearCachedProfile() {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.removeItem(PROFILE_CACHE_KEY)
+  } catch {
+    // ignore
+  }
+}
+
+/** Server mati total atau sesi tidak bisa diverifikasi → pakai profil terakhir. */
+function canUseCachedProfile(cause: unknown): boolean {
+  return isNetworkError(cause) || (cause instanceof ApiError && cause.status >= 500)
 }
 
 function normalizeUser(value: unknown): AuthUser {
@@ -67,6 +118,7 @@ async function fetchProfile(): Promise<AuthUser | null> {
     try {
       const session = await authApi.loadSession()
       if (!session) {
+        clearCachedProfile()
         accessToken.value = null
         user.value = null
         return null
@@ -74,8 +126,20 @@ async function fetchProfile(): Promise<AuthUser | null> {
       const data = normalizeUser(session)
       user.value = data
       accessToken.value = 'cookie'
+      writeCachedProfile(data)
       return data
-    } catch {
+    } catch (cause) {
+      // Offline / server sedang down: tetap tampilkan profil terakhir supaya
+      // keranjang dan halaman pesanan tidak melempar user ke dialog login.
+      if (canUseCachedProfile(cause)) {
+        const cached = readCachedProfile()
+        if (cached) {
+          user.value = cached
+          accessToken.value = 'cookie'
+          return cached
+        }
+      }
+      clearCachedProfile()
       accessToken.value = null
       user.value = null
       return null

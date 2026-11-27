@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { Box, Heart, Sparkles, ShieldCheck } from 'lucide-vue-next'
+import { Box, Cookie, Heart, Sparkles, ShieldCheck } from 'lucide-vue-next'
+import { useCookieConsent } from '@/lib/cookieConsent'
+
+const { openSettings } = useCookieConsent()
 </script>
 
 <template>
@@ -28,6 +31,13 @@ import { Box, Heart, Sparkles, ShieldCheck } from 'lucide-vue-next'
         <span class="inline-flex items-center gap-1 px-2.5 sm:px-3 py-1 rounded-full bg-pinky border-2 border-ink text-[11px] sm:text-xs font-bold shadow-[2px_2px_0_#1B2430]">
           <Heart :size="13" class="fill-white stroke-ink" /> Jakarta, Indonesia
         </span>
+        <button
+          type="button"
+          class="inline-flex items-center gap-1 px-2.5 sm:px-3 py-1 rounded-full bg-white border-2 border-ink text-[11px] sm:text-xs font-bold shadow-[2px_2px_0_#1B2430] transition active:translate-x-[1px] active:translate-y-[1px] active:shadow-none"
+          @click="openSettings"
+        >
+          <Cookie :size="13" class="text-ink" /> Pengaturan cookie
+        </button>
       </div>
     </div>
   </footer>

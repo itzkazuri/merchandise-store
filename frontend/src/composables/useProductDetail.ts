@@ -2,11 +2,14 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { catalogApi } from '@/api/catalog'
 import { ApiError } from '@/api/client'
+import { isNetworkError } from '@/api/errors'
 import { useAuth } from '@/composables/useAuth'
 import { openAuthDialog } from '@/composables/useAuthDialog'
 import { useCart } from '@/composables/useCart'
 import { useToast } from '@/composables/useToast'
+import { useApiReconnect } from '@/composables/useApiReconnect'
 import { getInitialProduct } from '@/lib/appState'
+import { cachedProducts, findCachedProduct, rememberProducts } from '@/lib/catalogCache'
 import { catalogImageUrl, decorateProduct, primaryImage, productImageUrl, productSeries, visualForCategory } from '@/lib/productVisual'
 import { findDemoProduct, loadDemoCatalog } from '@/lib/demoCatalog'
 import type { CatalogProduct } from '@/types/catalog'
@@ -68,6 +71,7 @@ export function useProductDetail() {
     try {
       const data = await catalogApi.products(params)
       const pool = (data.items || []).map(decorateProduct)
+      rememberProducts(pool)
       related.value = pickRelated(current, pool)
     } catch {
       related.value = []
@@ -101,14 +105,25 @@ export function useProductDetail() {
       const data = await catalogApi.product(slug)
       product.value = decorateProduct(data)
       liked.value = Boolean(data.is_liked || data.isLiked)
+      rememberProducts([product.value])
       await loadRelated(product.value)
     } catch (cause) {
-      const shown = await loadDemoDetail(slug)
-      if (!shown) {
-        error.value =
-          cause instanceof ApiError
-            ? cause.message
-            : 'Detail produk gagal dimuat. Coba lagi sebentar.'
+      // Utamakan salinan produk asli dari cache sebelum data demo.
+      const cached = findCachedProduct(slug)
+      if (cached) {
+        product.value = decorateProduct(cached)
+        liked.value = Boolean(cached.is_liked || cached.isLiked)
+        const pool = cachedProducts()
+        related.value = pool.length > 1 ? pickRelated(product.value, pool) : []
+        error.value = ''
+      } else {
+        const shown = await loadDemoDetail(slug)
+        if (!shown) {
+          error.value =
+            cause instanceof ApiError
+              ? cause.message
+              : 'Detail produk gagal dimuat. Coba lagi sebentar.'
+        }
       }
     } finally {
       loading.value = false
@@ -162,8 +177,12 @@ export function useProductDetail() {
       liked.value = !liked.value
       product.value.is_liked = liked.value
       product.value.isLiked = liked.value
-    } catch {
-      showToast('Gagal menyimpan produk. Coba lagi.')
+    } catch (cause) {
+      showToast(
+        isNetworkError(cause)
+          ? 'Favorit tidak tersimpan saat offline. Coba lagi setelah terhubung.'
+          : 'Gagal menyimpan produk. Coba lagi.',
+      )
     }
   }
 
@@ -199,8 +218,12 @@ export function useProductDetail() {
       else await catalogApi.unlike(item.id)
       item.is_liked = next
       item.isLiked = next
-    } catch {
-      showToast('Gagal menyimpan produk. Coba lagi.')
+    } catch (cause) {
+      showToast(
+        isNetworkError(cause)
+          ? 'Favorit tidak tersimpan saat offline. Coba lagi setelah terhubung.'
+          : 'Gagal menyimpan produk. Coba lagi.',
+      )
     }
   }
 
@@ -214,6 +237,7 @@ export function useProductDetail() {
       if (String(route.params.slug || '') !== slug) return
       product.value = decorateProduct(data)
       liked.value = Boolean(data.is_liked || data.isLiked)
+      rememberProducts([product.value])
       await loadRelated(product.value)
     } catch {
       // Diamkan: data hasil prerender masih valid untuk ditampilkan.
@@ -236,6 +260,12 @@ export function useProductDetail() {
     },
     { immediate: true },
   )
+
+  useApiReconnect(() => {
+    if (!error.value && !usingFallback.value) return
+    pendingSeedSlug = null
+    void loadProduct()
+  })
 
   onMounted(() => {
     if (!seededProduct) return

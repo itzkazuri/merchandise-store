@@ -28,7 +28,7 @@ try {
   if (!response.ok) throw new Error(`Google Fonts returned ${response.status}`)
   const css = await response.text()
   const faces: FontFace[] = []
-  const facePattern = /\/\*\s*\[([^\]]+)\]\s*\*\/\s*@font-face\s*\{([\s\S]*?)\}/g
+  const facePattern = /\/\*\s*([a-z-]+)\s*\*\/\s*@font-face\s*\{([\s\S]*?)\}/gi
 
   for (const match of css.matchAll(facePattern)) {
     const subset = match[1].trim().toLowerCase()
@@ -62,7 +62,6 @@ try {
   }))
 
   const fontCss = `${fontRules.map((rule) => rule.css).join('\n')}\n`
-  await writeFile(join(fontsDir, 'fonts.css'), fontCss)
   const indexPath = join(distDir, 'index.html')
   let html = await readFile(indexPath, 'utf8')
   const preloads = fontRules
@@ -70,8 +69,11 @@ try {
     .map((rule) => `<link rel="preload" href="/fonts/${rule.filename}" as="font" type="font/woff2" crossorigin>`)
   const tags = [
     ...preloads,
-    '<link rel="stylesheet" href="/fonts/fonts.css">',
+    `<style>${fontCss}</style>`,
   ].join('\n    ')
+  html = html.replace(/\s*<link\s+rel="preconnect"\s+href="https:\/\/fonts\.googleapis\.com"\s*>/i, '')
+  html = html.replace(/\s*<link\s+rel="preconnect"\s+href="https:\/\/fonts\.gstatic\.com"\s+crossorigin\s*>/i, '')
+  html = html.replace(/\s*<link\s+rel="stylesheet"\s+href="https:\/\/fonts\.googleapis\.com\/css2\?[^>]+>/i, '')
   html = html.replace('</head>', `    ${tags}\n  </head>`)
   await writeFile(indexPath, html)
   console.info(`[Font download] Downloaded ${fontRules.length} local WOFF2 subsets for Fredoka and Nunito.`)

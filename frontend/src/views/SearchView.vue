@@ -10,7 +10,10 @@ import { useCart } from '@/composables/useCart'
 import { useToast } from '@/composables/useToast'
 import { useAuth } from '@/composables/useAuth'
 import { openAuthDialog } from '@/composables/useAuthDialog'
+import { useApiReconnect } from '@/composables/useApiReconnect'
 import { catalogApi } from '@/api/catalog'
+import { isNetworkError } from '@/api/errors'
+import { rememberProducts, searchCachedProducts } from '@/lib/catalogCache'
 import { decorateProduct } from '@/lib/productVisual'
 import type { CatalogProduct, Category } from '@/types/catalog'
 
@@ -67,10 +70,30 @@ async function search(reset = true) {
       size: PAGE_SIZE,
     })
     const items = (data.items || []).map(decorateProduct)
+    rememberProducts(items)
     products.value = reset ? items : [...products.value, ...items]
     total.value = data.total
     hasNext.value = Boolean(data.has_next)
-  } catch {
+  } catch (cause) {
+    if (isNetworkError(cause)) {
+      const local = searchCachedProducts({
+        q: q.value,
+        category: selectedCategory.value,
+        sort: sortOption.value,
+        page: page.value,
+        size: PAGE_SIZE,
+      })
+      if (local.items.length) {
+        const items = local.items.map(decorateProduct)
+        products.value = reset ? items : [...products.value, ...items]
+        total.value = local.total
+        hasNext.value = local.pages > page.value
+        error.value = 'Mode offline: hasil diambil dari katalog yang tersimpan di perangkat ini.'
+      } else {
+        error.value = 'Server tidak bisa dihubungi dan katalog belum tersimpan di perangkat ini.'
+      }
+      return
+    }
     error.value = 'Gagal memuat hasil pencarian. Coba lagi.'
   } finally {
     loading.value = false
@@ -124,6 +147,11 @@ watch(() => route.query.q, (val) => {
 onMounted(async () => {
   const [, catResult] = await Promise.allSettled([search(), catalogApi.categories({ kind: 'product' })])
   if (catResult.status === 'fulfilled') categories.value = catResult.value || []
+})
+
+useApiReconnect(() => {
+  if (!error.value) return
+  void search(true)
 })
 </script>
 

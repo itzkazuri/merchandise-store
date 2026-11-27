@@ -6,7 +6,9 @@ import { useAuth } from '@/composables/useAuth'
 import { openAuthDialog } from '@/composables/useAuthDialog'
 import { useCart } from '@/composables/useCart'
 import { useToast } from '@/composables/useToast'
+import { useApiReconnect } from '@/composables/useApiReconnect'
 import { decorateProduct, isPreorder, visualForCategory } from '@/lib/productVisual'
+import { rememberProducts, searchCachedProducts } from '@/lib/catalogCache'
 import { loadDemoCatalog, type DemoCatalog } from '@/lib/demoCatalog'
 import type { CatalogProduct, CatalogSort, Category, HomeCatalog } from '@/types/catalog'
 
@@ -36,6 +38,20 @@ export function useHomeCatalog() {
   const searchQuery = ref(String(route.query.q || ''))
   const selectedCategory = ref(String(route.query.kategori || ''))
   const sortOption = ref<CatalogSort>('newest')
+
+  // Render saved catalog content immediately on repeat visits, then replace it
+  // with the latest API response when that request completes.
+  const cachedPage = searchCachedProducts({
+    q: searchQuery.value,
+    category: selectedCategory.value,
+    sort: sortOption.value,
+    page: 1,
+    size: PAGE_SIZE,
+  })
+  products.value = cachedPage.items.map(decorateProduct)
+  total.value = cachedPage.total
+  hasNext.value = cachedPage.items.length < cachedPage.total
+  heroProducts.value = cachedPage.items.slice(0, 3).map(decorateProduct)
 
   let demoCatalog: DemoCatalog | null = null
 
@@ -237,6 +253,7 @@ export function useHomeCatalog() {
         sort: sortOption.value,
       })
       const items = (data.items || []).map(decorateProduct)
+      rememberProducts(items)
       products.value = reset ? items : [...products.value, ...items]
       total.value = data.total
       hasNext.value = Boolean(data.has_next)
@@ -289,6 +306,12 @@ export function useHomeCatalog() {
         handmade: (data.handmade || []).map(decorateProduct),
         imported: (data.imported || []).map(decorateProduct),
       }
+      rememberProducts([
+        ...homeFeed.value.new_arrivals,
+        ...homeFeed.value.best_sellers,
+        ...homeFeed.value.handmade,
+        ...homeFeed.value.imported,
+      ])
 
       const heroItems = (data.new_arrivals || data.best_sellers || [])
         .slice(0, 3)
@@ -379,6 +402,13 @@ export function useHomeCatalog() {
   }
 
   onBeforeUnmount(() => clearTimeout(searchTimer))
+
+  useApiReconnect(() => {
+    if (!error.value && !usingFallback.value) return
+    usingFallback.value = false
+    fallbackNote.value = ''
+    void Promise.allSettled([loadMeta(), load(true)])
+  })
 
   watch([searchQuery, selectedCategory, sortOption], scheduleSearch)
   watch(

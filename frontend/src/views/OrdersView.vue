@@ -20,6 +20,7 @@ import { rupiah, shortDate } from '@/lib/format'
 import { visualFor } from '@/lib/productVisual'
 import type { Order, OrderItem, OrderStatus } from '@/types/order'
 import { useSeo } from '@/composables/useSeo'
+import { useApiReconnect } from '@/composables/useApiReconnect'
 
 useSeo({
   title: 'Pesanan Saya',
@@ -136,6 +137,12 @@ function refresh() {
 
 onMounted(() => {
   void load(1)
+  void loadPendingTotal()
+})
+
+useApiReconnect(() => {
+  if (!error.value) return
+  void load(page.value)
   void loadPendingTotal()
 })
 </script>

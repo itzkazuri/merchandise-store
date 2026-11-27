@@ -21,6 +21,7 @@ import AdminStatus from '@/components/ui/AdminStatus.vue'
 import AdminState from '@/components/ui/AdminState.vue'
 import { adminApi } from '@/api/admin'
 import { ApiError } from '@/api/client'
+import { useApiReconnect } from '@/composables/useApiReconnect'
 
 interface Order {
   id: number
@@ -110,6 +111,11 @@ async function load() {
 }
 
 onMounted(load)
+
+useApiReconnect(() => {
+  if (!error.value) return
+  void load()
+})
 </script>
 
 <template>

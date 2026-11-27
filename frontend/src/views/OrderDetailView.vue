@@ -23,6 +23,7 @@ import { ApiError } from '@/api/client'
 import { longDateTime, rupiah, shortDate } from '@/lib/format'
 import type { Order } from '@/types/order'
 import { useSeo } from '@/composables/useSeo'
+import { useApiReconnect } from '@/composables/useApiReconnect'
 
 useSeo({
   title: 'Detail Pesanan',
@@ -197,6 +198,11 @@ onMounted(async () => {
       await checkPaymentStatus(false)
     }
   }
+})
+
+useApiReconnect(() => {
+  if (!error.value) return
+  void load()
 })
 
 </script>

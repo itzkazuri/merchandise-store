@@ -18,7 +18,11 @@ import { useCart, FREE_SHIPPING_THRESHOLD } from '@/composables/useCart'
 import { useAuth } from '@/composables/useAuth'
 import { openAuthDialog } from '@/composables/useAuthDialog'
 import { useSeo } from '@/composables/useSeo'
+import { useApiReconnect } from '@/composables/useApiReconnect'
+import { useConnectivity } from '@/lib/connectivity'
 import { catalogApi } from '@/api/catalog'
+import { isNetworkError } from '@/api/errors'
+import { rememberProducts } from '@/lib/catalogCache'
 import { rupiah } from '@/lib/format'
 import { productSeries } from '@/lib/productVisual'
 import type { CatalogProduct } from '@/types/catalog'
@@ -30,6 +34,7 @@ useSeo({
 
 const router = useRouter()
 const { isAuthenticated } = useAuth()
+const { apiOnline } = useConnectivity()
 const {
   cartLines,
   cartCount,
@@ -73,27 +78,52 @@ function remove(line: { product: CatalogProduct }) {
   clearUnavailable(line.product.id)
 }
 
-onMounted(async () => {
+async function refreshStock() {
+  refreshing.value = true
+  const lines = [...cartLines.value]
   const results = await Promise.allSettled(
-    cartLines.value.map(async (line) => {
+    lines.map(async (line) => {
       if (!line.product.slug) return
       const fresh = await catalogApi.product(line.product.slug)
+      rememberProducts([fresh])
       setProduct(fresh)
       if (Number(fresh.stock ?? 0) <= 0) markUnavailable(line.product.id)
       else clearUnavailable(line.product.id)
     }),
   )
+
+  let offlineFailures = 0
   results.forEach((result, index) => {
-    const line = cartLines.value[index]
-    if (result.status === 'rejected' && line) markUnavailable(line.product.id)
+    if (result.status !== 'rejected') return
+    if (isNetworkError(result.reason)) {
+      offlineFailures += 1
+      return
+    }
+    const line = lines[index]
+    if (line) markUnavailable(line.product.id)
   })
+
+  if (offlineFailures) {
+    notice.value =
+      'Server tidak bisa dihubungi. Keranjang tetap tersimpan di perangkat ini; stok akan dicek ulang saat koneksi pulih.'
+  }
   refreshing.value = false
+}
+
+onMounted(refreshStock)
+
+useApiReconnect(() => {
+  void refreshStock()
 })
 
 function goCheckout() {
   notice.value = ''
   if (!cartLines.value.length) {
     notice.value = 'Keranjang masih kosong.'
+    return
+  }
+  if (!apiOnline.value) {
+    notice.value = 'Checkout membutuhkan koneksi ke server. Sambungkan internet lalu coba lagi.'
     return
   }
   if (hasUnavailable.value) {

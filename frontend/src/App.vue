@@ -3,6 +3,8 @@ import { computed } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
 import { useHead } from '@unhead/vue'
 import LoginModal from '@/components/auth/LoginModal.vue'
+import OfflineBanner from '@/components/OfflineBanner.vue'
+import CookieConsent from '@/components/CookieConsent.vue'
 
 const route = useRoute()
 
@@ -25,4 +27,6 @@ useHead({
 <template>
   <RouterView />
   <LoginModal />
+  <OfflineBanner />
+  <CookieConsent />
 </template>

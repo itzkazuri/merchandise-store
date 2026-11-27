@@ -6,6 +6,7 @@ import { useCart } from '@/composables/useCart'
 import { hasAnyRole, useAuth } from '@/composables/useAuth'
 import { openAuthDialog } from '@/composables/useAuthDialog'
 import { catalogApi } from '@/api/catalog'
+import { searchCachedProducts } from '@/lib/catalogCache'
 import { decorateProduct, imageUrl, productImageUrl, visualFor } from '@/lib/productVisual'
 import { rupiah } from '@/lib/format'
 import type { CatalogProduct } from '@/types/catalog'
@@ -83,7 +84,8 @@ async function doSearch(q: string) {
     const data = await catalogApi.products({ q: q.trim(), size: 6, sort: 'newest' })
     searchResults.value = (data.items || []).map(decorateProduct)
   } catch {
-    searchResults.value = []
+    // Offline: cari dari katalog yang sudah tersimpan di perangkat.
+    searchResults.value = searchCachedProducts({ q: q.trim(), size: 6 }).items.map(decorateProduct)
   } finally {
     searchLoading.value = false
   }
@@ -180,9 +182,13 @@ async function loadHints() {
       ...cats.slice(0, 4).map((c) => `Coba cari "${c}"`),
     ]
   } catch {
+    const cached = searchCachedProducts({ size: 20, sort: 'best_seller' }).items
+    const names = cached.map((product) => product.name).filter(Boolean)
     placeholderHints = [
       ...BASE_PLACEHOLDERS,
-      ...FALLBACK_HINTS.slice(0, 5).map((n) => `Coba cari "${n}"`),
+      ...(names.length
+        ? names.slice(0, 6).map((n) => `Coba cari "${n}"`)
+        : FALLBACK_HINTS.slice(0, 5).map((n) => `Coba cari "${n}"`)),
     ]
   }
   for (let i = placeholderHints.length - 1; i > 0; i--) {

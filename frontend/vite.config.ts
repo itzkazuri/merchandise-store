@@ -17,9 +17,21 @@ const midtransCspSources = [
 export default defineConfig(({ isSsrBuild, mode }) => {
   const envDir = fileURLToPath(new URL('.', import.meta.url))
   const env = loadEnv(mode, envDir, 'VITE_')
+  const defaultApiOrigin = 'http://localhost:8000'
   const apiOrigin = new URL(
-    env.VITE_API_ORIGIN || env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1',
+    env.VITE_API_BASE_URL || env.VITE_API_ORIGIN || `${defaultApiOrigin}/api/v1`,
+    env.VITE_API_ORIGIN || defaultApiOrigin,
   ).origin
+  const allowedHosts = (env.VITE_ALLOWED_HOSTS || '')
+    .split(',')
+    .map((host) => host.trim())
+    .filter(Boolean)
+  const apiProxy = {
+    target: apiOrigin,
+    changeOrigin: true,
+    secure: apiOrigin.startsWith('https://'),
+  }
+  const tunnelWebSocketSources = allowedHosts.map((host) => `wss://${host}`)
   const mediaOrigin = new URL(
     env.VITE_STORAGE_ORIGIN || env.VITE_MEDIA_BASE_URL || 'http://127.0.0.1:9000',
   ).origin
@@ -30,16 +42,28 @@ export default defineConfig(({ isSsrBuild, mode }) => {
     "frame-ancestors 'none'",
     "form-action 'self'",
     `script-src 'self' https://accounts.google.com ${midtransCspSources}`,
-    `style-src 'self' 'unsafe-inline' ${midtransCspSources}`,
+    `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com ${midtransCspSources}`,
+    "font-src 'self' data: https://fonts.gstatic.com",
     `img-src 'self' data: https: ${mediaOrigin} http://localhost:9000`,
-    `connect-src 'self' ${apiOrigin} https://accounts.google.com https://oauth2.googleapis.com ${midtransCspSources} ws://localhost:5173 ws://127.0.0.1:5173`,
+    `connect-src 'self' ${apiOrigin} https://accounts.google.com https://oauth2.googleapis.com ${midtransCspSources} ${tunnelWebSocketSources.join(' ')} ws://localhost:5173 ws://127.0.0.1:5173`,
     `frame-src https://accounts.google.com ${midtransCspSources}`,
   ].join('; ')
 
   return {
     envDir,
-    server: { headers: { 'Content-Security-Policy': contentSecurityPolicy } },
-    preview: { headers: { 'Content-Security-Policy': contentSecurityPolicy } },
+    server: {
+      allowedHosts,
+      proxy: {
+        '/api': { ...apiProxy },
+        '/health': { ...apiProxy },
+      },
+      ws: allowedHosts.length ? { protocol: 'wss', clientPort: 443 } : undefined,
+      headers: { 'Content-Security-Policy': contentSecurityPolicy },
+    },
+    preview: {
+      allowedHosts,
+      headers: { 'Content-Security-Policy': contentSecurityPolicy },
+    },
     plugins: [
       vue(),
       vueDevTools(),
